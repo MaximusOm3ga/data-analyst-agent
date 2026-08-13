@@ -1,0 +1,4 @@
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-12T17:13:44.145102"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-12T17:13:44.155103"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-12T18:27:56.449936"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-12T18:27:56.456944"}
