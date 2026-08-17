@@ -1,4 +1,6 @@
+import io
 import json
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -6,7 +8,12 @@ from typing import Any, Dict, List
 import httpx
 import streamlit as st
 
-st.set_page_config(page_title="Ticket Triage Agent UI", page_icon="🎫", layout="wide")
+st.set_page_config(
+    page_title="Ticket Triage Agent UI",
+    page_icon="🎫",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 
 def _post_json(base_url: str, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -32,25 +39,82 @@ def _read_last_log_lines(repo_root: Path, filename: str, limit: int = 100) -> Li
     return lines[-limit:]
 
 
+def _docs_from_zip(
+    zip_bytes: bytes,
+    default_category: str,
+    default_owner: str,
+    max_files: int = 500,
+    max_chars_per_file: int = 500_000,
+) -> Dict[str, Any]:
+    allowed_suffixes = {".txt", ".md", ".rst", ".log", ".csv", ".json"}
+    docs: List[Dict[str, Any]] = []
+    skipped: List[str] = []
+
+    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as archive:
+        members = [m for m in archive.infolist() if not m.is_dir()]
+        for member in members[:max_files]:
+            inner_path = member.filename
+            suffix = Path(inner_path).suffix.lower()
+            if suffix not in allowed_suffixes:
+                skipped.append(inner_path)
+                continue
+            try:
+                content_bytes = archive.read(member)
+                content = content_bytes.decode("utf-8", errors="ignore").strip()
+                if not content:
+                    skipped.append(inner_path)
+                    continue
+                if len(content) > max_chars_per_file:
+                    content = content[:max_chars_per_file]
+                doc_id = inner_path.replace("\\", "/").replace("/", "__")
+                docs.append(
+                    {
+                        "id": doc_id,
+                        "title": Path(inner_path).stem or inner_path,
+                        "content": content,
+                        "source_url": f"zip://{inner_path}",
+                        "category": default_category,
+                        "metadata": {"owner": default_owner, "path_in_zip": inner_path},
+                    }
+                )
+            except Exception:
+                skipped.append(inner_path)
+
+    return {"documents": docs, "skipped_files": skipped}
+
+
 st.title("🎫 IT Ticket Triage Agent")
 st.caption("UI for KB ingestion, ticket triage, and audit inspection")
 
 default_api = "http://127.0.0.1:8000"
-base_url = st.sidebar.text_input("API Base URL", default_api).rstrip("/")
 repo_root = Path(__file__).resolve().parents[1]
 
-if st.sidebar.button("Check Health"):
+base_url = st.sidebar.text_input("API Base URL", default_api).rstrip("/")
+check_health_clicked = st.sidebar.button("Check Health")
+
+if check_health_clicked:
     try:
         health = _get_json(base_url, "/health")
         st.sidebar.success(f"API OK: {health}")
     except Exception as exc:
         st.sidebar.error(f"Health check failed: {exc}")
 
+with st.expander("Quick access", expanded=False):
+    quick_base_url = st.text_input("API Base URL (quick)", value=base_url).rstrip("/")
+    if quick_base_url:
+        base_url = quick_base_url
+    if st.button("Check Health (quick)"):
+        try:
+            health = _get_json(base_url, "/health")
+            st.success(f"API OK: {health}")
+        except Exception as exc:
+            st.error(f"Health check failed: {exc}")
+
 tabs = st.tabs(["KB Ingestion", "Ticket Triage", "KB Search", "Audit Logs"])
 
 with tabs[0]:
     st.subheader("Upload KB Documents")
-    st.write("Paste JSON payload for `/kb/documents`.")
+    st.write("Paste JSON payload for `/kb/documents` or upload a zipped folder (`.zip`).")
     sample_kb_payload = {
         "documents": [
             {
@@ -86,6 +150,47 @@ with tabs[0]:
                 st.json(result)
             except Exception as exc:
                 st.error(f"Upload failed: {exc}")
+
+    st.divider()
+    st.subheader("Upload Zipped KB Folder")
+    zip_file = st.file_uploader("Upload .zip containing KB files", type=["zip"])
+    zip_category = st.text_input("Default category for zip docs", value="Other")
+    zip_owner = st.text_input("Owner metadata for zip docs", value="IT")
+    max_zip_files = st.slider("Max files to read from zip", min_value=10, max_value=2000, value=500, step=10)
+    max_chars_per_file = st.slider(
+        "Max characters per file",
+        min_value=10_000,
+        max_value=1_000_000,
+        value=500_000,
+        step=10_000,
+    )
+
+    if st.button("Upload ZIP to KB"):
+        if not zip_file:
+            st.warning("Please upload a .zip file first.")
+        else:
+            try:
+                parsed = _docs_from_zip(
+                    zip_file.getvalue(),
+                    default_category=zip_category,
+                    default_owner=zip_owner,
+                    max_files=max_zip_files,
+                    max_chars_per_file=max_chars_per_file,
+                )
+                docs_payload = {"documents": parsed["documents"]}
+                if not docs_payload["documents"]:
+                    st.warning("No supported text-like files found in the zip.")
+                else:
+                    result = _post_json(base_url, "/kb/documents", docs_payload)
+                    st.success(
+                        f"Uploaded {len(docs_payload['documents'])} docs from zip. "
+                        f"Skipped {len(parsed['skipped_files'])} files."
+                    )
+                    st.json(result)
+                    with st.expander("Skipped files"):
+                        st.json(parsed["skipped_files"])
+            except Exception as exc:
+                st.error(f"ZIP upload failed: {exc}")
 
 with tabs[1]:
     st.subheader("Submit Ticket")

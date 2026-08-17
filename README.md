@@ -11,7 +11,7 @@ Getting started:
 5. (Optional UI) run: streamlit run ui/app.py
 
 Endpoints:
-- POST /ingest/web_form -> runs the agent loop (enrich -> retrieve -> classify -> policy gate -> tool-action stub -> audit log) and returns action + decision
+- POST /ingest/web_form -> runs the agent loop (enrich -> retrieve -> classify -> policy gate -> tool action -> audit log) and returns action + decision
 - POST /kb/init-store -> initializes KB store schema/resources (required for Postgres mode)
 - POST /kb/documents -> ingests KB documents into vector store
 - GET /kb/search -> searches KB chunks by semantic similarity
@@ -43,8 +43,44 @@ LLM classifier setup (`.env`):
 - `TRIAGE_LLM_API_KEY=...`
 - `TRIAGE_LLM_TIMEOUT_SECONDS=45`
 
+Embeddings setup for real RAG retrieval (`.env`):
+- `TRIAGE_EMBEDDINGS_MODE=auto|api|mock`
+  - `auto`: use embeddings API when key is present, else fallback to mock embeddings
+  - `api`: force real embeddings call
+  - `mock`: deterministic mock embeddings (for local testing only)
+- `TRIAGE_EMBEDDINGS_BASE_URL=https://api.groq.com/openai/v1`
+- `TRIAGE_EMBEDDINGS_MODEL=text-embedding-3-small` (use an embedding-capable model)
+- `TRIAGE_EMBEDDINGS_API_KEY=...` (falls back to `TRIAGE_LLM_API_KEY` if omitted)
+- `TRIAGE_EMBEDDINGS_TIMEOUT_SECONDS=45`
+- Optional: `KB_EMBEDDING_DIMENSION=1536` for pgvector schema consistency
+
+Important reindex flow when switching from mock to real embeddings:
+1. Set embeddings mode/model/key in `.env`.
+2. Recreate or truncate your `rag_documents` table.
+3. Call `POST /kb/init-store` to initialize schema with the correct vector dimension.
+4. Re-upload all KB documents (`POST /kb/documents`), because old vectors are not compatible.
+
 Streamlit UI (`ui/app.py`) features:
 - KB store init + KB payload upload
+- Zipped-folder KB upload (`.zip`) for text-like files (`.txt`, `.md`, `.rst`, `.log`, `.csv`, `.json`)
 - Ticket submission and agent-loop result view
 - KB semantic search
 - Audit log viewer for `agent_loop_audit.log` and `shadow_predictions.log`
+
+Tool-call execution mode (`.env`):
+- `TRIAGE_TOOL_CALL_MODE=mock|http`
+  - `mock`: current local stub tools (`itsm_router_stub`, `auto_resolver_stub`, `triage_queue_stub`)
+  - `http`: calls external endpoints for real execution
+- `TRIAGE_TOOL_HTTP_BASE_URL=http://host:port` (required in `http` mode)
+- `TRIAGE_TOOL_HTTP_API_KEY=...` (optional bearer token)
+- `TRIAGE_TOOL_HTTP_TIMEOUT_SECONDS=20`
+- `TRIAGE_TOOL_HTTP_VERIFY_TLS=true|false`
+- Endpoint overrides (optional):
+  - `TRIAGE_TOOL_HTTP_ROUTE_PATH=/tools/route`
+  - `TRIAGE_TOOL_HTTP_RESOLVE_PATH=/tools/resolve`
+  - `TRIAGE_TOOL_HTTP_REVIEW_PATH=/tools/human-review`
+
+HTTP tool payload shape:
+- `ticket`: normalized ticket fields
+- `decision`: classifier decision fields
+- `execution`: `{action, attempt, idempotency_key}`

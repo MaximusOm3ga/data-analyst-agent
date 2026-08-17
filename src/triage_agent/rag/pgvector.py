@@ -1,29 +1,31 @@
 import json
 from typing import List, Dict, Any
 from .base import VectorStore
-from .embeddings import embed_text_deterministic, vector_to_pg_literal
+from .embeddings import embed_text, get_embedding_dimension, vector_to_pg_literal
 
-# pgvector adapter using psycopg (v3) with deterministic embeddings.
-# Swap embed_text_deterministic for a real embedding model when available.
+# pgvector adapter using psycopg (v3) with OpenAI-compatible embeddings.
 
-PGVECTOR_MIGRATION_SQL = """
--- Requires Postgres with the pgvector extension enabled:
-CREATE EXTENSION IF NOT EXISTS vector;
+def _build_pgvector_migration_sql(dimension: int) -> str:
+    return f"""
+    -- Requires Postgres with the pgvector extension enabled:
+    CREATE EXTENSION IF NOT EXISTS vector;
 
-CREATE TABLE IF NOT EXISTS rag_documents (
-  id BIGSERIAL PRIMARY KEY,
-  doc_id TEXT UNIQUE NOT NULL,
-  content TEXT NOT NULL,
-  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-  embedding VECTOR(32) NOT NULL
-);
+    CREATE TABLE IF NOT EXISTS rag_documents (
+      id BIGSERIAL PRIMARY KEY,
+      doc_id TEXT UNIQUE NOT NULL,
+      content TEXT NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+      embedding VECTOR({dimension}) NOT NULL
+    );
 
-CREATE INDEX IF NOT EXISTS idx_rag_documents_embedding ON rag_documents USING ivfflat (embedding vector_cosine_ops);
-"""
+    CREATE INDEX IF NOT EXISTS idx_rag_documents_embedding ON rag_documents USING ivfflat (embedding vector_cosine_ops);
+    """
+
 
 class PgVectorStore(VectorStore):
     def __init__(self, dsn: str):
         self.dsn = dsn
+        self.dimension = get_embedding_dimension()
         try:
             import psycopg
         except ImportError as exc:
@@ -33,7 +35,7 @@ class PgVectorStore(VectorStore):
     def initialize(self) -> None:
         with self._psycopg.connect(self.dsn) as conn:
             with conn.cursor() as cur:
-                cur.execute(PGVECTOR_MIGRATION_SQL)
+                cur.execute(_build_pgvector_migration_sql(self.dimension))
             conn.commit()
 
     def add_documents(self, documents: List[Dict[str, Any]]) -> None:
@@ -43,7 +45,11 @@ class PgVectorStore(VectorStore):
             with conn.cursor() as cur:
                 for doc in documents:
                     text = doc.get("text", "")
-                    embedding = embed_text_deterministic(text)
+                    embedding = embed_text(text)
+                    if len(embedding) != self.dimension:
+                        raise RuntimeError(
+                            f"Embedding dimension mismatch. Expected {self.dimension}, got {len(embedding)} for doc {doc.get('id')}."
+                        )
                     embedding_literal = vector_to_pg_literal(embedding)
                     cur.execute(
                         """
@@ -67,7 +73,11 @@ class PgVectorStore(VectorStore):
     def retrieve(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         if k <= 0:
             return []
-        query_embedding = embed_text_deterministic(query)
+        query_embedding = embed_text(query)
+        if len(query_embedding) != self.dimension:
+            raise RuntimeError(
+                f"Query embedding dimension mismatch. Expected {self.dimension}, got {len(query_embedding)}."
+            )
         query_literal = vector_to_pg_literal(query_embedding)
         with self._psycopg.connect(self.dsn) as conn:
             with conn.cursor() as cur:

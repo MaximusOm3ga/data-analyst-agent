@@ -6,7 +6,9 @@ from fastapi.testclient import TestClient
 os.environ["KB_VECTOR_STORE"] = "memory"
 os.environ.pop("KB_POSTGRES_DSN", None)
 os.environ["TRIAGE_CLASSIFIER_MODE"] = "mock"
-os.environ.pop("TRIAGE_LLM_API_KEY", None)
+os.environ["TRIAGE_LLM_API_KEY"] = ""
+os.environ["TRIAGE_EMBEDDINGS_MODE"] = "mock"
+os.environ["TRIAGE_EMBEDDINGS_API_KEY"] = ""
 
 from src.triage_agent.main import app
 

@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 import numpy as np
 from .base import VectorStore
-from .embeddings import embed_text_deterministic
+from .embeddings import embed_text
 
 
 class InMemoryVectorStore(VectorStore):
@@ -15,7 +15,7 @@ class InMemoryVectorStore(VectorStore):
     def add_documents(self, documents: List[Dict[str, Any]]) -> None:
         for doc in documents:
             text = doc.get("text", "")
-            vec = np.array(embed_text_deterministic(text), dtype=np.float32)
+            vec = np.array(embed_text(text), dtype=np.float32)
             entry = {
                 "id": doc.get("id") or f"doc-{self._next_id}",
                 "text": text,
@@ -28,10 +28,12 @@ class InMemoryVectorStore(VectorStore):
     def retrieve(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         if not self._docs:
             return []
-        qv = np.array(embed_text_deterministic(query), dtype=np.float32)
+        qv = np.array(embed_text(query), dtype=np.float32)
         scored = []
         for d in self._docs:
             vec = d["vector"]
+            if vec.shape[0] != qv.shape[0]:
+                continue
             score = float(np.dot(qv, vec))
             scored.append((score, d))
         scored.sort(key=lambda x: x[0], reverse=True)

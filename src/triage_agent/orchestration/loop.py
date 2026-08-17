@@ -5,6 +5,7 @@ from ..enrichment import enricher
 from ..kb.service import search_kb
 from ..logging import shadow_log
 from ..schemas import AgentLoopResult, ClassificationOutput, CommonTicket, EnrichmentContext
+from ..tools.executor import execute_tool_action
 
 MAX_ATTEMPTS = 3
 SECURITY_TERMS = (
@@ -35,45 +36,6 @@ def policy_gate(decision: ClassificationOutput, guardrail: Dict[str, Any]) -> st
     if decision.confidence >= 0.6:
         return "auto_route_spotcheck"
     return "human_review"
-
-
-def execute_tool_action(ticket: CommonTicket, decision: ClassificationOutput, action: str) -> Dict[str, Any]:
-    if action == "force_security_route":
-        return {
-            "success": True,
-            "tool": "itsm_router_stub",
-            "target_queue": "Security",
-            "priority": "P1-Critical",
-            "message": "Security override applied and ticket routed to Security queue.",
-        }
-    if action == "auto_route":
-        return {
-            "success": True,
-            "tool": "itsm_router_stub",
-            "target_queue": decision.queue,
-            "priority": decision.priority,
-            "message": "Ticket auto-routed using classifier output.",
-        }
-    if action == "auto_route_spotcheck":
-        return {
-            "success": True,
-            "tool": "itsm_router_stub",
-            "target_queue": decision.queue,
-            "priority": decision.priority,
-            "message": "Ticket routed and flagged for spot-check.",
-            "spotcheck_required": True,
-        }
-    if action == "auto_resolve":
-        return {
-            "success": True,
-            "tool": "auto_resolver_stub",
-            "message": "Auto-resolve flow simulated successfully.",
-        }
-    return {
-        "success": True,
-        "tool": "triage_queue_stub",
-        "message": "Ticket moved to human triage review queue.",
-    }
 
 
 def _build_override_decision(
@@ -136,7 +98,7 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
             decision = _build_override_decision(decision, guardrail["reasons"])
 
         action = policy_gate(decision, guardrail)
-        tool_result = execute_tool_action(ticket, decision, action)
+        tool_result = execute_tool_action(ticket, decision, action, attempt=attempt)
         shadow_log.log_prediction(ticket, enrichment, decision)
         shadow_log.log_loop_event(
             ticket=ticket,
