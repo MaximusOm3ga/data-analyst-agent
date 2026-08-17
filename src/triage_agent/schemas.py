@@ -52,3 +52,14 @@ class KnowledgeBaseSearchResult(BaseModel):
     text: str
     score: float
     metadata: Dict[str, Any] = {}
+
+
+class AgentLoopResult(BaseModel):
+    ticket_id_source: str
+    status: str
+    action: str
+    attempts: int
+    decision: ClassificationOutput
+    guardrail_triggered: bool = False
+    guardrail_reasons: List[str] = []
+    tool_result: Dict[str, Any] = {}

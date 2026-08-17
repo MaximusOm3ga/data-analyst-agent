@@ -1,18 +1,7 @@
-import hashlib
 from typing import List, Dict, Any
 import numpy as np
 from .base import VectorStore
-
-
-def _embed_text_deterministic(text: str) -> np.ndarray:
-    # Create a deterministic fixed-size vector from sha256 digest
-    digest = hashlib.sha256(text.encode("utf-8")).digest()
-    vec = np.frombuffer(digest, dtype=np.uint8).astype(np.float32)
-    # normalize
-    norm = np.linalg.norm(vec)
-    if norm == 0:
-        return vec
-    return vec / norm
+from .embeddings import embed_text_deterministic
 
 
 class InMemoryVectorStore(VectorStore):
@@ -20,10 +9,13 @@ class InMemoryVectorStore(VectorStore):
         self._docs: List[Dict[str, Any]] = []
         self._next_id = 1
 
+    def initialize(self) -> None:
+        return None
+
     def add_documents(self, documents: List[Dict[str, Any]]) -> None:
         for doc in documents:
             text = doc.get("text", "")
-            vec = _embed_text_deterministic(text)
+            vec = np.array(embed_text_deterministic(text), dtype=np.float32)
             entry = {
                 "id": doc.get("id") or f"doc-{self._next_id}",
                 "text": text,
@@ -36,7 +28,7 @@ class InMemoryVectorStore(VectorStore):
     def retrieve(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         if not self._docs:
             return []
-        qv = _embed_text_deterministic(query)
+        qv = np.array(embed_text_deterministic(query), dtype=np.float32)
         scored = []
         for d in self._docs:
             vec = d["vector"]

@@ -2,3 +2,24 @@
 {"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-12T17:13:44.155103"}
 {"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-12T18:27:56.449936"}
 {"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-12T18:27:56.456944"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-13T05:40:08.978419"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-13T05:40:08.991821"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-13T05:41:46.983664"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-13T05:41:46.994398"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-13T11:22:30.940490"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-13T11:22:30.952414"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-16T18:26:34.768066"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-16T18:26:34.776261"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-16T18:26:34.781915"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-16T18:27:46.530708"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-16T18:27:46.539077"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-16T18:27:46.545170"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-16T18:31:13.081721"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-16T18:31:13.089727"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-16T18:31:13.093737"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Account/Password", "queue": "ServiceDesk-L1", "confidence": 0.97, "timestamp": "2026-08-16T18:39:30.134806"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Hardware", "queue": "ServiceDesk-L1", "confidence": 0.86, "timestamp": "2026-08-16T18:39:31.624149"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-16T18:39:32.968571"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-16T18:39:40.599515"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-16T18:39:40.608585"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-16T18:39:40.615096"}

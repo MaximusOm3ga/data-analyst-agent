@@ -1,19 +1,21 @@
+import json
 from typing import List, Dict, Any
 from .base import VectorStore
+from .embeddings import embed_text_deterministic, vector_to_pg_literal
 
-# Placeholder pgvector adapter. Requires psycopg2 / asyncpg + pgvector extension.
-# This file provides an implementation outline and a migration SQL string.
+# pgvector adapter using psycopg (v3) with deterministic embeddings.
+# Swap embed_text_deterministic for a real embedding model when available.
 
 PGVECTOR_MIGRATION_SQL = """
 -- Requires Postgres with the pgvector extension enabled:
--- CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS rag_documents (
-  id SERIAL PRIMARY KEY,
+  id BIGSERIAL PRIMARY KEY,
   doc_id TEXT UNIQUE NOT NULL,
   content TEXT NOT NULL,
-  metadata JSONB,
-  embedding VECTOR(32)
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  embedding VECTOR(32) NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_rag_documents_embedding ON rag_documents USING ivfflat (embedding vector_cosine_ops);
@@ -21,12 +23,73 @@ CREATE INDEX IF NOT EXISTS idx_rag_documents_embedding ON rag_documents USING iv
 
 class PgVectorStore(VectorStore):
     def __init__(self, dsn: str):
-        # Connect to Postgres and prepare statements. Implementation omitted in prototype.
         self.dsn = dsn
-        raise NotImplementedError("PgVectorStore is a placeholder; implement DB connections and queries")
+        try:
+            import psycopg
+        except ImportError as exc:
+            raise RuntimeError("psycopg is required for Postgres mode. Install requirements.txt first.") from exc
+        self._psycopg = psycopg
+
+    def initialize(self) -> None:
+        with self._psycopg.connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(PGVECTOR_MIGRATION_SQL)
+            conn.commit()
 
     def add_documents(self, documents: List[Dict[str, Any]]) -> None:
-        raise NotImplementedError
+        if not documents:
+            return
+        with self._psycopg.connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                for doc in documents:
+                    text = doc.get("text", "")
+                    embedding = embed_text_deterministic(text)
+                    embedding_literal = vector_to_pg_literal(embedding)
+                    cur.execute(
+                        """
+                        INSERT INTO rag_documents (doc_id, content, metadata, embedding)
+                        VALUES (%s, %s, %s::jsonb, %s::vector)
+                        ON CONFLICT (doc_id)
+                        DO UPDATE SET
+                          content = EXCLUDED.content,
+                          metadata = EXCLUDED.metadata,
+                          embedding = EXCLUDED.embedding
+                        """,
+                        (
+                            doc.get("id"),
+                            text,
+                            json.dumps(doc.get("metadata", {})),
+                            embedding_literal,
+                        ),
+                    )
+            conn.commit()
 
     def retrieve(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        raise NotImplementedError
+        if k <= 0:
+            return []
+        query_embedding = embed_text_deterministic(query)
+        query_literal = vector_to_pg_literal(query_embedding)
+        with self._psycopg.connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT doc_id, content, metadata, 1 - (embedding <=> %s::vector) AS score
+                    FROM rag_documents
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s
+                    """,
+                    (query_literal, query_literal, k),
+                )
+                rows = cur.fetchall()
+        results: List[Dict[str, Any]] = []
+        for row in rows:
+            doc_id, content, metadata, score = row
+            results.append(
+                {
+                    "id": doc_id,
+                    "text": content,
+                    "metadata": metadata or {},
+                    "score": float(score),
+                }
+            )
+        return results

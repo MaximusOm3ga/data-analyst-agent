@@ -4,6 +4,11 @@ from ..rag.ingest import ingest_documents
 from ..schemas import KnowledgeBaseDocument, KnowledgeBaseSearchResult
 
 
+def initialize_kb_store() -> Dict[str, Any]:
+    default_vector_store.initialize()
+    return {"status": "initialized"}
+
+
 def ingest_kb_documents(documents: List[KnowledgeBaseDocument]) -> Dict[str, Any]:
     payload = []
     for doc in documents:
