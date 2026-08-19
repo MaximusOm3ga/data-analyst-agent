@@ -44,6 +44,25 @@ def _stub_result(action: str, decision: ClassificationOutput) -> Dict[str, Any]:
             "spotcheck_required": True,
         }
     if action == "auto_resolve":
+        category = (decision.category or "").lower()
+        if category in {"account/password", "access request"}:
+            return {
+                "success": True,
+                "tool": "password_reset_stub",
+                "message": "Password reset flow simulated successfully.",
+            }
+        if category == "network/vpn":
+            return {
+                "success": True,
+                "tool": "network_diagnostics_stub",
+                "message": "Network diagnostics flow simulated successfully.",
+            }
+        if category == "software install":
+            return {
+                "success": True,
+                "tool": "software_license_stub",
+                "message": "Software provisioning flow simulated successfully.",
+            }
         return {
             "success": True,
             "tool": "auto_resolver_stub",
@@ -92,15 +111,29 @@ def _build_tool_payload(
     }
 
 
-def _endpoint_for_action(action: str) -> str:
+def _endpoint_for_action(action: str, decision: ClassificationOutput) -> str:
     if action in {"force_security_route", "auto_route", "auto_route_spotcheck"}:
         return os.getenv("TRIAGE_TOOL_HTTP_ROUTE_PATH", "/tools/route")
     if action == "auto_resolve":
+        category = (decision.category or "").strip().lower()
+        if category in {"account/password", "access request"}:
+            return os.getenv("TRIAGE_TOOL_HTTP_PASSWORD_RESET_PATH", "/tools/password-reset")
+        if category == "network/vpn":
+            return os.getenv("TRIAGE_TOOL_HTTP_NETWORK_DIAGNOSTICS_PATH", "/tools/network-diagnostics")
+        if category == "software install":
+            return os.getenv("TRIAGE_TOOL_HTTP_SOFTWARE_LICENSE_PATH", "/tools/software-license")
         return os.getenv("TRIAGE_TOOL_HTTP_RESOLVE_PATH", "/tools/resolve")
     return os.getenv("TRIAGE_TOOL_HTTP_REVIEW_PATH", "/tools/human-review")
 
 
-def _post_tool_payload(action: str, payload: Dict[str, Any], idempotency_key: str) -> Dict[str, Any]:
+def _post_to_path(
+    *,
+    action: str,
+    path: str,
+    payload: Dict[str, Any],
+    idempotency_key: str,
+    step_name: str,
+) -> Dict[str, Any]:
     base_url = os.getenv("TRIAGE_TOOL_HTTP_BASE_URL", "").strip().rstrip("/")
     if not base_url:
         return {
@@ -110,7 +143,6 @@ def _post_tool_payload(action: str, payload: Dict[str, Any], idempotency_key: st
             "error": "TRIAGE_TOOL_HTTP_BASE_URL is required when TRIAGE_TOOL_CALL_MODE=http.",
         }
 
-    path = _endpoint_for_action(action)
     timeout_s = float(os.getenv("TRIAGE_TOOL_HTTP_TIMEOUT_SECONDS", "20"))
     verify_tls = os.getenv("TRIAGE_TOOL_HTTP_VERIFY_TLS", "true").strip().lower() not in {
         "0",
@@ -134,6 +166,7 @@ def _post_tool_payload(action: str, payload: Dict[str, Any], idempotency_key: st
             return {
                 "success": True,
                 "tool": "tool_http_router",
+                "step": step_name,
                 "action": action,
                 "endpoint": f"{base_url}{path}",
                 "status_code": response.status_code,
@@ -143,6 +176,7 @@ def _post_tool_payload(action: str, payload: Dict[str, Any], idempotency_key: st
         return {
             "success": False,
             "tool": "tool_http_router",
+            "step": step_name,
             "action": action,
             "endpoint": f"{base_url}{path}",
             "status_code": exc.response.status_code,
@@ -152,6 +186,7 @@ def _post_tool_payload(action: str, payload: Dict[str, Any], idempotency_key: st
         return {
             "success": False,
             "tool": "tool_http_router",
+            "step": step_name,
             "action": action,
             "endpoint": f"{base_url}{path}",
             "error": str(exc),
@@ -166,5 +201,39 @@ def execute_tool_action(
 ) -> Dict[str, Any]:
     if _tool_mode() == "mock":
         return _stub_result(action, decision)
+
     payload = _build_tool_payload(ticket, decision, action, attempt)
-    return _post_tool_payload(action, payload, payload["execution"]["idempotency_key"])
+    idempotency_key = payload["execution"]["idempotency_key"]
+
+    if action == "force_security_route":
+        contain_path = os.getenv("TRIAGE_TOOL_HTTP_SECURITY_CONTAIN_PATH", "/tools/security-contain")
+        route_path = _endpoint_for_action(action, decision)
+        contain_result = _post_to_path(
+            action=action,
+            path=contain_path,
+            payload=payload,
+            idempotency_key=f"{idempotency_key}:contain",
+            step_name="security_contain",
+        )
+        route_result = _post_to_path(
+            action=action,
+            path=route_path,
+            payload=payload,
+            idempotency_key=f"{idempotency_key}:route",
+            step_name="route_security",
+        )
+        return {
+            "success": bool(contain_result.get("success")) and bool(route_result.get("success")),
+            "tool": "tool_http_workflow",
+            "action": action,
+            "steps": [contain_result, route_result],
+        }
+
+    path = _endpoint_for_action(action, decision)
+    return _post_to_path(
+        action=action,
+        path=path,
+        payload=payload,
+        idempotency_key=idempotency_key,
+        step_name="single_step",
+    )

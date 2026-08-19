@@ -1,7 +1,11 @@
+import json
+from datetime import datetime
+from types import SimpleNamespace
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import ValidationError
-from .schemas import AgentLoopResult, CommonTicket, KnowledgeBaseIngestRequest, KnowledgeBaseSearchResult
-from .kb.service import ingest_kb_documents, search_kb, initialize_kb_store
+from .schemas import AgentLoopResult, CommonTicket, KnowledgeBaseIngestRequest, KnowledgeBaseSearchResult, ResolvedTicketRecord
+from .kb.service import ingest_kb_documents, ingest_resolved_ticket, search_kb, initialize_kb_store
+from .logging import shadow_log
 from .orchestration.loop import run_ticket_loop
 from .rag.store import get_store_name
 from pathlib import Path
@@ -30,6 +34,44 @@ async def kb_documents(payload: KnowledgeBaseIngestRequest):
             fh.write(tb + "\n")
         # return a concise error message but keep details in log
         raise HTTPException(status_code=500, detail="Internal server error while ingesting KB documents. See kb_upload_error.log for details.")
+
+
+@app.post("/tickets/resolved")
+async def ingest_resolved_ticket_endpoint(payload: ResolvedTicketRecord):
+    try:
+        ticket = CommonTicket(
+            ticket_id_source=payload.ticket_id_source,
+            source_channel=payload.source_channel,
+            requester_identifier=payload.requester_identifier,
+            subject=payload.subject,
+            body_raw=payload.body_raw,
+            body_cleaned=payload.body_raw,
+            attachments=[],
+            timestamp_received=payload.timestamp_received or datetime.utcnow(),
+            channel_metadata=payload.metadata,
+        )
+        classification = SimpleNamespace(
+            category=payload.category or "Other",
+            queue=payload.queue or "ServiceDesk-L1",
+            priority=payload.priority or "P4-Low",
+            summary=payload.resolution_summary,
+        )
+        tool_result = {"success": True, "status": payload.status, "resolution_summary": payload.resolution_summary}
+        result = ingest_resolved_ticket(
+            ticket=ticket,
+            classification=classification,
+            resolution_summary=payload.resolution_summary,
+            tool_result=tool_result,
+        )
+        shadow_log.log_resolved_ticket(
+            ticket=ticket,
+            classification=classification,
+            summary=payload.resolution_summary,
+            tool_result=tool_result,
+        )
+        return {"status": "ok", "ticket_id_source": payload.ticket_id_source, "kb_ingest": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/kb/upload-zip")
@@ -91,6 +133,26 @@ async def kb_search(query: str, limit: int = 5):
         return search_kb(query, limit=limit)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/tickets/resolved/logs")
+async def resolved_ticket_logs(limit: int = 20):
+    log_path = Path(__file__).resolve().parents[2] / "resolved_tickets.log"
+    if not log_path.exists():
+        return []
+    entries = []
+    with log_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+            if len(entries) >= limit:
+                break
+    return list(reversed(entries))
+
 
 @app.get("/health")
 async def health():

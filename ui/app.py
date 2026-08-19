@@ -9,7 +9,7 @@ import httpx
 import streamlit as st
 
 st.set_page_config(
-    page_title="Ticket Triage Agent UI",
+    page_title="Ticket Triage Agent Admin Dashboard",
     page_icon="🎫",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -83,8 +83,8 @@ def _docs_from_zip(
     return {"documents": docs, "skipped_files": skipped}
 
 
-st.title("🎫 IT Ticket Triage Agent")
-st.caption("UI for KB ingestion, ticket triage, and audit inspection")
+st.title("🎫 IT Ticket Triage Agent - Admin Dashboard")
+st.caption("Admin UI for KB ingestion, ticket triage inspection, KB search, and audit logs")
 
 default_api = "http://127.0.0.1:8000"
 repo_root = Path(__file__).resolve().parents[1]
@@ -110,7 +110,7 @@ with st.expander("Quick access", expanded=False):
         except Exception as exc:
             st.error(f"Health check failed: {exc}")
 
-tabs = st.tabs(["KB Ingestion", "Ticket Triage", "KB Search", "Audit Logs"])
+tabs = st.tabs(["KB Ingestion", "Ticket Triage", "KB Search", "Resolved Tickets", "Audit Logs"])
 
 with tabs[0]:
     st.subheader("Upload KB Documents")
@@ -156,13 +156,14 @@ with tabs[0]:
     zip_file = st.file_uploader("Upload .zip containing KB files", type=["zip"])
     zip_category = st.text_input("Default category for zip docs", value="Other")
     zip_owner = st.text_input("Owner metadata for zip docs", value="IT")
-    max_zip_files = st.slider("Max files to read from zip", min_value=10, max_value=2000, value=500, step=10)
+    max_zip_files = st.slider("Max files to read from zip", min_value=10, max_value=2000, value=500, step=10, key="zip_max_files")
     max_chars_per_file = st.slider(
         "Max characters per file",
         min_value=10_000,
         max_value=1_000_000,
         value=500_000,
         step=10_000,
+        key="zip_max_chars",
     )
 
     if st.button("Upload ZIP to KB"):
@@ -239,10 +240,59 @@ with tabs[2]:
             st.error(f"Search failed: {exc}")
 
 with tabs[3]:
+    st.subheader("Resolved Ticket Registry")
+    st.write("Successful resolutions are ingested into the KB and stored in the resolved ticket log.")
+
+    resolved_log_choice = st.selectbox("Resolved ticket log", ["resolved_tickets.log", "agent_loop_audit.log", "shadow_predictions.log"], key="resolved_log_choice")
+    resolved_lines_limit = st.slider("Lines", min_value=20, max_value=500, value=100, step=20, key="resolved_lines_limit")
+    if st.button("Refresh Resolved Tickets", key="refresh_resolved_tickets"):
+        lines = _read_last_log_lines(repo_root, resolved_log_choice, resolved_lines_limit)
+        if not lines:
+            st.info("No resolved ticket records found yet.")
+        else:
+            st.code("".join(lines), language="json")
+
+    st.divider()
+    st.subheader("Manually Add Resolved Ticket to KB")
+    with st.form("manual_resolved_ticket"):
+        manual_ticket_id = st.text_input("Ticket ID", value=f"manual-{int(datetime.now().timestamp())}")
+        manual_requester = st.text_input("Requester", value="user@example.com")
+        manual_subject = st.text_input("Subject", value="Password reset completed")
+        manual_body = st.text_area("Original issue", value="User could not log in due to lost password.", height=120)
+        manual_resolution = st.text_area("Resolution summary", value="User verified identity and completed password reset via MFA flow.", height=120)
+        manual_category = st.text_input("Category", value="Access Request")
+        manual_queue = st.text_input("Queue", value="ServiceDesk-L1")
+        manual_priority = st.text_input("Priority", value="P3-Medium")
+        manual_status = st.selectbox("Status", ["resolved", "closed"], index=0)
+        submit_manual = st.form_submit_button("Store Resolved Ticket")
+
+    if submit_manual:
+        try:
+            payload = {
+                "ticket_id_source": manual_ticket_id,
+                "source_channel": "ui_admin",
+                "requester_identifier": manual_requester,
+                "subject": manual_subject,
+                "body_raw": manual_body,
+                "resolution_summary": manual_resolution,
+                "category": manual_category,
+                "queue": manual_queue,
+                "priority": manual_priority,
+                "status": manual_status,
+                "timestamp_received": datetime.now(timezone.utc).isoformat(),
+                "metadata": {"owner": "IT", "ui": "admin_dashboard"},
+            }
+            result = _post_json(base_url, "/tickets/resolved", payload)
+            st.success("Resolved ticket saved to KB and audit log.")
+            st.json(result)
+        except Exception as exc:
+            st.error(f"Resolved ticket ingest failed: {exc}")
+
+with tabs[4]:
     st.subheader("Audit Logs")
-    log_choice = st.selectbox("Log File", ["agent_loop_audit.log", "shadow_predictions.log"])
-    lines_limit = st.slider("Lines", min_value=20, max_value=500, value=100, step=20)
-    if st.button("Refresh Logs"):
+    log_choice = st.selectbox("Log File", ["agent_loop_audit.log", "shadow_predictions.log", "resolved_tickets.log"], key="audit_log_choice")
+    lines_limit = st.slider("Lines", min_value=20, max_value=500, value=100, step=20, key="audit_lines_limit")
+    if st.button("Refresh Logs", key="refresh_audit_logs"):
         lines = _read_last_log_lines(repo_root, log_choice, lines_limit)
         if not lines:
             st.info("No log lines found yet.")

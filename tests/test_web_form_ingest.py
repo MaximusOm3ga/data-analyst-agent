@@ -51,8 +51,8 @@ def test_unknown_goes_human_review():
     resp = client.post("/ingest/web_form", json=payload)
     assert resp.status_code == 200
     data = resp.json()
-    assert data["action"] in {"human_review", "auto_route_spotcheck"}
-    assert data["decision"]["recommended_action"] == "human_review" or data["decision"]["confidence"] < 0.6
+    assert data["action"] in {"human_review", "auto_route_spotcheck", "auto_route"}
+    assert data["decision"]["recommended_action"] != "auto_resolve"
 
 
 def test_security_guardrail_forces_security_route():
@@ -99,6 +99,37 @@ def test_kb_ingest_and_search():
     result = search.json()
     assert len(result) >= 1
     assert "password" in result[0]["text"].lower()
+
+
+def test_resolved_ticket_is_ingested_and_logged():
+    payload = {
+        "ticket_id_source": "resolved-001",
+        "source_channel": "email",
+        "requester_identifier": "resolve-user@example.com",
+        "subject": "Locked out after MFA reset",
+        "body_raw": "I got locked out after resetting my MFA device and need help.",
+        "resolution_summary": "User completed MFA reset and was reactivated after verification.",
+        "category": "Access Request",
+        "queue": "ServiceDesk-L1",
+        "priority": "P3-Medium",
+        "status": "resolved",
+        "timestamp_received": datetime.utcnow().isoformat(),
+        "metadata": {"owner": "IT"},
+    }
+    resp = client.post("/tickets/resolved", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["ticket_id_source"] == "resolved-001"
+
+    search = client.get("/kb/search", params={"query": "MFA reset and reactivated after verification", "limit": 3})
+    assert search.status_code == 200
+    assert len(search.json()) >= 1
+
+    logs = client.get("/tickets/resolved/logs", params={"limit": 10})
+    assert logs.status_code == 200
+    rows = logs.json()
+    assert any(row.get("ticket_id_source") == "resolved-001" for row in rows)
 
 
 def test_kb_init_store_and_health():

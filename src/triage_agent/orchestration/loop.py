@@ -2,7 +2,7 @@ from typing import Any, Dict, List
 
 from ..classification import llm
 from ..enrichment import enricher
-from ..kb.service import search_kb
+from ..kb.service import ingest_resolved_ticket, search_kb
 from ..logging import shadow_log
 from ..schemas import AgentLoopResult, ClassificationOutput, CommonTicket, EnrichmentContext
 from ..tools.executor import execute_tool_action
@@ -114,6 +114,25 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
         final_guardrail = guardrail
 
         if tool_result.get("success"):
+            if decision.recommended_action == "auto_resolve":
+                success_summary = (
+                    tool_result.get("summary")
+                    or tool_result.get("message")
+                    or decision.summary
+                    or "Ticket resolved successfully."
+                )
+                ingest_resolved_ticket(
+                    ticket=ticket,
+                    classification=decision,
+                    resolution_summary=success_summary,
+                    tool_result=tool_result,
+                )
+                shadow_log.log_resolved_ticket(
+                    ticket=ticket,
+                    classification=decision,
+                    summary=success_summary,
+                    tool_result=tool_result,
+                )
             break
 
     if not final_tool_result.get("success"):

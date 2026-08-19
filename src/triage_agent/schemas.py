@@ -54,6 +54,21 @@ class KnowledgeBaseSearchResult(BaseModel):
     metadata: Dict[str, Any] = {}
 
 
+class ResolvedTicketRecord(BaseModel):
+    ticket_id_source: str
+    source_channel: str = "web_form"
+    requester_identifier: str
+    subject: Optional[str] = None
+    body_raw: str
+    resolution_summary: str
+    category: Optional[str] = None
+    queue: Optional[str] = None
+    priority: Optional[str] = None
+    status: str = "resolved"
+    timestamp_received: Optional[datetime] = None
+    metadata: Dict[str, Any] = {}
+
+
 class AgentLoopResult(BaseModel):
     ticket_id_source: str
     status: str

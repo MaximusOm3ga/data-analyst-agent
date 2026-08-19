@@ -23,3 +23,39 @@
 {"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-16T18:39:40.599515"}
 {"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-16T18:39:40.608585"}
 {"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-16T18:39:40.615096"}
+{"ticket_id_source": "ui-1786940015", "requester": "user@example.com", "category": "Account/Password", "queue": "ServiceDesk-L1", "confidence": 0.96, "timestamp": "2026-08-17T04:13:35.502970+00:00"}
+{"ticket_id_source": "ui-1786940027", "requester": "user@example.com", "category": "Account/Password", "queue": "ServiceDesk-L1", "confidence": 0.96, "timestamp": "2026-08-17T04:13:47.586165+00:00"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-17T04:17:50.642719"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-17T04:17:50.652747"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-17T04:17:50.657053"}
+{"ticket_id_source": "ui-1786940469", "requester": "user@example.com", "category": "Account/Password", "queue": "ServiceDesk-L1", "confidence": 0.96, "timestamp": "2026-08-17T04:21:09.089456+00:00"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-17T04:27:48.675795"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-17T04:27:48.683798"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-17T04:27:48.689792"}
+{"ticket_id_source": "ui-1786950662", "requester": "user@example.com", "category": "Account/Password", "queue": "ServiceDesk-L1", "confidence": 0.96, "timestamp": "2026-08-17T07:11:02.622307+00:00"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-17T07:43:18.301115"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-17T07:43:18.310675"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-17T07:43:18.316190"}
+{"ticket_id_source": "ui-1786954527", "requester": "user@example.com", "category": "Account/Password", "queue": "ServiceDesk-L1", "confidence": 0.96, "timestamp": "2026-08-17T08:15:27.077638+00:00"}
+{"ticket_id_source": "ui-1787027498", "requester": "user@example.com", "category": "Hardware", "queue": "ServiceDesk-L1", "confidence": 0.94, "timestamp": "2026-08-18T04:31:38.549084+00:00"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-18T04:37:11.826817"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-18T04:37:12.139975"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-18T04:37:12.403757"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-18T11:43:55.793205"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Other", "queue": "ServiceDesk-L1", "confidence": 0.5, "timestamp": "2026-08-18T11:43:56.067898"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-18T11:43:56.298650"}
+{"ticket_id_source": "portal-1787135807", "requester": "user@example.com", "category": "Account/Password", "queue": "ServiceDesk-L1", "confidence": 0.96, "timestamp": "2026-08-19T10:36:47.217749+00:00"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-19T11:33:45.428112"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Software Install", "queue": "ServiceDesk-L1", "confidence": 0.82, "timestamp": "2026-08-19T11:33:46.430723"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-19T11:33:47.431049"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-19T11:34:25.715327"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Software Install", "queue": "ServiceDesk-L1", "confidence": 0.82, "timestamp": "2026-08-19T11:34:26.721296"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-19T11:34:27.702936"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-19T11:35:13.155850"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Software Install", "queue": "ServiceDesk-L1", "confidence": 0.82, "timestamp": "2026-08-19T11:35:14.131798"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-19T11:35:14.983514"}
+{"ticket_id_source": "web-1", "requester": "user@example.com", "category": "Access Request", "queue": "ServiceDesk-L1", "confidence": 0.9, "timestamp": "2026-08-19T11:36:11.013067"}
+{"ticket_id_source": "web-2", "requester": "user2@example.com", "category": "Software Install", "queue": "ServiceDesk-L1", "confidence": 0.82, "timestamp": "2026-08-19T11:36:11.911792"}
+{"ticket_id_source": "web-3", "requester": "user3@example.com", "category": "Security Incident", "queue": "Security", "confidence": 1.0, "timestamp": "2026-08-19T11:36:12.811747"}
+{"ticket_id_source": "ui-1787140198", "requester": "user@example.com", "category": "Account/Password", "queue": "ServiceDesk-L1", "confidence": 0.96, "timestamp": "2026-08-19T11:49:58.456686+00:00"}
+{"ticket_id_source": "portal-1787140251", "requester": "user@example.com", "category": "Account/Password", "queue": "ServiceDesk-L1", "confidence": 0.96, "timestamp": "2026-08-19T11:50:51.806759+00:00"}

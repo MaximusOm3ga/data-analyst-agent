@@ -8,7 +8,8 @@ Getting started:
 2. Activate it and install deps: pip install -r requirements.txt
 3. Create a root `.env` file with your settings (see `.env.example`)
 4. Run: uvicorn src.triage_agent.main:app --reload --host 127.0.0.1 --port 8000
-5. (Optional UI) run: streamlit run ui/app.py
+5. (Optional admin UI) run: streamlit run ui/app.py
+6. (Optional end-user portal) run: streamlit run ui/user_dashboard.py
 
 Endpoints:
 - POST /ingest/web_form -> runs the agent loop (enrich -> retrieve -> classify -> policy gate -> tool action -> audit log) and returns action + decision
@@ -67,9 +68,14 @@ Streamlit UI (`ui/app.py`) features:
 - KB semantic search
 - Audit log viewer for `agent_loop_audit.log` and `shadow_predictions.log`
 
+End-user Streamlit portal (`ui/user_dashboard.py`) features:
+- Simple ticket submission form
+- Resolution-focused output (summary, assigned team, priority, next steps)
+- No raw JSON output
+
 Tool-call execution mode (`.env`):
 - `TRIAGE_TOOL_CALL_MODE=mock|http`
-  - `mock`: current local stub tools (`itsm_router_stub`, `auto_resolver_stub`, `triage_queue_stub`)
+  - `mock`: local stub tools
   - `http`: calls external endpoints for real execution
 - `TRIAGE_TOOL_HTTP_BASE_URL=http://host:port` (required in `http` mode)
 - `TRIAGE_TOOL_HTTP_API_KEY=...` (optional bearer token)
@@ -79,6 +85,20 @@ Tool-call execution mode (`.env`):
   - `TRIAGE_TOOL_HTTP_ROUTE_PATH=/tools/route`
   - `TRIAGE_TOOL_HTTP_RESOLVE_PATH=/tools/resolve`
   - `TRIAGE_TOOL_HTTP_REVIEW_PATH=/tools/human-review`
+  - `TRIAGE_TOOL_HTTP_PASSWORD_RESET_PATH=/tools/password-reset`
+  - `TRIAGE_TOOL_HTTP_NETWORK_DIAGNOSTICS_PATH=/tools/network-diagnostics`
+  - `TRIAGE_TOOL_HTTP_SOFTWARE_LICENSE_PATH=/tools/software-license`
+  - `TRIAGE_TOOL_HTTP_SECURITY_CONTAIN_PATH=/tools/security-contain`
+
+Action-to-tool routing in HTTP mode:
+- `force_security_route`: runs `security-contain` first, then `route`
+- `auto_route` / `auto_route_spotcheck`: calls `route`
+- `auto_resolve`:
+  - `Account/Password` or `Access Request` -> `password-reset`
+  - `Network/VPN` -> `network-diagnostics`
+  - `Software Install` -> `software-license`
+  - fallback -> `resolve`
+- `human_review` -> `human-review`
 
 HTTP tool payload shape:
 - `ticket`: normalized ticket fields
