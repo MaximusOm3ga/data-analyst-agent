@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, List
 
 from ..classification import llm
@@ -8,6 +9,7 @@ from ..schemas import AgentLoopResult, ClassificationOutput, CommonTicket, Enric
 from ..tools.executor import execute_tool_action
 
 MAX_ATTEMPTS = 3
+PENDING_APPROVALS: Dict[str, Dict[str, Any]] = {}
 SECURITY_TERMS = (
     "phishing",
     "credentials leaked",
@@ -59,6 +61,19 @@ def _build_override_decision(
     )
 
 
+def requires_human_approval(action: str, decision: ClassificationOutput, guardrail: Dict[str, Any]) -> bool:
+    enabled = os.getenv("TRIAGE_APPROVAL_REQUIRED", "true").strip().lower()
+    if enabled not in {"1", "true", "yes", "on"}:
+        return False
+    if action in {"force_security_route", "auto_route_spotcheck"}:
+        return True
+    if guardrail.get("triggered") and action in {"auto_route", "auto_resolve", "force_security_route"}:
+        return True
+    if decision.priority in {"P1-Critical", "P2-High"} and action in {"auto_route", "auto_resolve"}:
+        return True
+    return False
+
+
 def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
     attempt = 0
     final_decision = ClassificationOutput(
@@ -98,6 +113,49 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
             decision = _build_override_decision(decision, guardrail["reasons"])
 
         action = policy_gate(decision, guardrail)
+        approval_required = requires_human_approval(action, decision, guardrail)
+        if approval_required:
+            final_decision = decision
+            final_action = action
+            final_guardrail = guardrail
+            final_tool_result = {
+                "success": False,
+                "requires_approval": True,
+                "action": action,
+                "reason": "High-risk automated action requires human approval before execution.",
+            }
+            PENDING_APPROVALS[ticket.ticket_id_source] = {
+                "ticket": ticket,
+                "decision": decision,
+                "action": action,
+                "attempt": attempt,
+                "guardrail": guardrail,
+                "reason": "High-risk automated action requires human approval before execution.",
+            }
+            shadow_log.log_prediction(ticket, enrichment, decision)
+            shadow_log.log_loop_event(
+                ticket=ticket,
+                attempt=attempt,
+                action=action,
+                tool_result=final_tool_result,
+                guardrail=guardrail,
+                approval_required=True,
+                approval_reason=final_tool_result["reason"],
+            )
+            status = "awaiting_approval"
+            return AgentLoopResult(
+                ticket_id_source=ticket.ticket_id_source,
+                status=status,
+                action=final_action,
+                attempts=attempt,
+                decision=final_decision,
+                guardrail_triggered=bool(final_guardrail["triggered"]),
+                guardrail_reasons=list(final_guardrail["reasons"]),
+                tool_result=final_tool_result,
+                requires_approval=True,
+                approval_reason=final_tool_result["reason"],
+            )
+
         tool_result = execute_tool_action(ticket, decision, action, attempt=attempt)
         shadow_log.log_prediction(ticket, enrichment, decision)
         shadow_log.log_loop_event(

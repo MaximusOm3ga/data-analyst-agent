@@ -78,3 +78,12 @@ class AgentLoopResult(BaseModel):
     guardrail_triggered: bool = False
     guardrail_reasons: List[str] = []
     tool_result: Dict[str, Any] = {}
+    requires_approval: bool = False
+    approval_reason: Optional[str] = None
+
+
+class TicketApprovalRequest(BaseModel):
+    ticket_id_source: str
+    approver: str = "admin"
+    reason: str = "Approved by operator"
+    approved: bool = True

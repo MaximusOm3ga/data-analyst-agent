@@ -225,8 +225,29 @@ with tabs[1]:
                     f"**Queue:** `{decision.get('queue')}` | "
                     f"**Confidence:** `{decision.get('confidence')}`"
                 )
+            if result.get("requires_approval"):
+                st.warning("This action requires human approval before execution.")
+                if st.button("Approve Pending Action", key=f"approve_{ticket_id_source}"):
+                    approval_payload = {
+                        "ticket_id_source": ticket_id_source,
+                        "approver": "admin-ui",
+                        "reason": "Approved from admin dashboard",
+                        "approved": True,
+                    }
+                    approval_result = _post_json(base_url, "/tickets/approve", approval_payload)
+                    st.success("Approval recorded")
+                    st.json(approval_result)
         except Exception as exc:
             st.error(f"Triage failed: {exc}")
+
+    st.divider()
+    st.subheader("Pending Approvals")
+    if st.button("Refresh Approval Queue"):
+        try:
+            pending = _get_json(base_url, "/approval/pending")
+            st.json(pending)
+        except Exception as exc:
+            st.error(f"Failed to load approval queue: {exc}")
 
 with tabs[2]:
     st.subheader("Search KB")

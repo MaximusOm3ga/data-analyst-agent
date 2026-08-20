@@ -3,11 +3,13 @@ from datetime import datetime
 from types import SimpleNamespace
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import ValidationError
-from .schemas import AgentLoopResult, CommonTicket, KnowledgeBaseIngestRequest, KnowledgeBaseSearchResult, ResolvedTicketRecord
+from .schemas import AgentLoopResult, CommonTicket, KnowledgeBaseIngestRequest, KnowledgeBaseSearchResult, ResolvedTicketRecord, TicketApprovalRequest
 from .kb.service import ingest_kb_documents, ingest_resolved_ticket, search_kb, initialize_kb_store
 from .logging import shadow_log
-from .orchestration.loop import run_ticket_loop
+from .orchestration.loop import PENDING_APPROVALS, run_ticket_loop
 from .rag.store import get_store_name
+from .audit.service import initialize_audit_store
+from .tools.executor import execute_tool_action
 from pathlib import Path
 
 app = FastAPI(title="IT Ticket Triage Agent - Prototype")
@@ -157,3 +159,80 @@ async def resolved_ticket_logs(limit: int = 20):
 @app.get("/health")
 async def health():
     return {"status": "ok", "kb_store": get_store_name()}
+
+
+@app.post("/audit/init")
+async def audit_init_store():
+    try:
+        return initialize_audit_store()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/approval/pending")
+async def pending_approvals():
+    return {
+        "pending": [
+            {
+                "ticket_id_source": ticket_id,
+                "action": item["action"],
+                "reason": item["reason"],
+                "priority": item["decision"].priority,
+                "queue": item["decision"].queue,
+            }
+            for ticket_id, item in sorted(PENDING_APPROVALS.items())
+        ]
+    }
+
+
+@app.get("/audit/resolved")
+async def audit_resolved(limit: int = 20):
+    from .audit.service import list_recent_resolved_tickets
+    return list_recent_resolved_tickets(limit=limit)
+
+
+@app.post("/tickets/approve")
+async def approve_ticket(payload: TicketApprovalRequest):
+    pending = PENDING_APPROVALS.get(payload.ticket_id_source)
+    if not pending:
+        raise HTTPException(status_code=404, detail="No pending approval for this ticket.")
+
+    if not payload.approved:
+        PENDING_APPROVALS.pop(payload.ticket_id_source, None)
+        return {"status": "rejected", "ticket_id_source": payload.ticket_id_source}
+
+    ticket = pending["ticket"]
+    decision = pending["decision"]
+    action = pending["action"]
+    tool_result = execute_tool_action(ticket, decision, action, attempt=pending["attempt"])
+    shadow_log.log_loop_event(
+        ticket=ticket,
+        attempt=pending["attempt"],
+        action=action,
+        tool_result=tool_result,
+        guardrail=pending.get("guardrail", {"triggered": False, "reasons": []}),
+        approval_required=False,
+        approval_reason="Approver: " + payload.approver + "; " + payload.reason,
+    )
+
+    if decision.recommended_action == "auto_resolve":
+        success_summary = tool_result.get("message") or decision.summary or "Ticket resolved successfully after approval."
+        ingest_resolved_ticket(
+            ticket=ticket,
+            classification=decision,
+            resolution_summary=success_summary,
+            tool_result=tool_result,
+        )
+        shadow_log.log_resolved_ticket(
+            ticket=ticket,
+            classification=decision,
+            summary=success_summary,
+            tool_result=tool_result,
+        )
+
+    PENDING_APPROVALS.pop(payload.ticket_id_source, None)
+    return {
+        "status": "approved",
+        "ticket_id_source": payload.ticket_id_source,
+        "tool_result": tool_result,
+    }

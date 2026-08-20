@@ -132,6 +132,66 @@ def test_resolved_ticket_is_ingested_and_logged():
     assert any(row.get("ticket_id_source") == "resolved-001" for row in rows)
 
 
+def test_risky_action_requires_approval():
+    os.environ["TRIAGE_APPROVAL_REQUIRED"] = "true"
+    payload = {
+        "ticket_id_source": "web-approval-1",
+        "source_channel": "email",
+        "requester_identifier": "user-risk@example.com",
+        "subject": "Urgent suspicious email",
+        "body_raw": "I think this is phishing and maybe a data breach.",
+        "body_cleaned": None,
+        "attachments": [],
+        "timestamp_received": datetime.utcnow().isoformat(),
+        "channel_metadata": {},
+    }
+    resp = client.post("/ingest/web_form", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "awaiting_approval"
+    assert data["requires_approval"] is True
+    assert data["action"] == "force_security_route"
+
+    decision = client.post(
+        "/tickets/approve",
+        json={
+            "ticket_id_source": "web-approval-1",
+            "approver": "ops-admin",
+            "reason": "Escalated to security lead",
+            "approved": True,
+        },
+    )
+    assert decision.status_code == 200
+    assert decision.json()["status"] == "approved"
+
+
+def test_audit_store_records_resolved_ticket():
+    os.environ["AUDIT_DB_DSN"] = "sqlite:///triage_audit_test.db"
+    init_resp = client.post("/audit/init")
+    assert init_resp.status_code == 200
+    assert init_resp.json()["status"] == "initialized"
+
+    payload = {
+        "ticket_id_source": "resolved-audit-1",
+        "source_channel": "email",
+        "requester_identifier": "audit-user@example.com",
+        "subject": "Password reset complete",
+        "body_raw": "I forgot my password and needed help.",
+        "resolution_summary": "User verified identity and completed reset.",
+        "category": "Access Request",
+        "queue": "ServiceDesk-L1",
+        "priority": "P3-Medium",
+        "status": "resolved",
+        "timestamp_received": datetime.utcnow().isoformat(),
+        "metadata": {"owner": "IT"},
+    }
+    resp = client.post("/tickets/resolved", json=payload)
+    assert resp.status_code == 200
+    rows = client.get("/audit/resolved", params={"limit": 20})
+    assert rows.status_code == 200
+    assert any(row.get("ticket_id_source") == "resolved-audit-1" for row in rows.json())
+
+
 def test_kb_init_store_and_health():
     init_resp = client.post("/kb/init-store")
     assert init_resp.status_code == 200
