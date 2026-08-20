@@ -4,7 +4,7 @@ This scaffold implements a minimal FastAPI-based triage prototype in shadow mode
 
 Getting started:
 
-1. Create a venv: python -m venv .venv
+1. Use Python 3.13 and create a venv: python -m venv .venv
 2. Activate it and install deps: pip install -r requirements.txt
 3. Create a root `.env` file with your settings (see `.env.example`)
 4. Run: uvicorn src.triage_agent.main:app --reload --host 127.0.0.1 --port 8000
@@ -54,6 +54,7 @@ Embeddings setup for real RAG retrieval (`.env`):
 - `TRIAGE_EMBEDDINGS_API_KEY=...` (falls back to `TRIAGE_LLM_API_KEY` if omitted)
 - `TRIAGE_EMBEDDINGS_TIMEOUT_SECONDS=45`
 - Optional: `KB_EMBEDDING_DIMENSION=1536` for pgvector schema consistency
+- Local embedding model fallback is enabled when `sentence-transformers` is installed (included in `requirements.txt`).
 
 Important reindex flow when switching from mock to real embeddings:
 1. Set embeddings mode/model/key in `.env`.
