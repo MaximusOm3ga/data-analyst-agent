@@ -81,11 +81,15 @@ if latest_request and latest_result:
     st.write(guidance)
     st.warning("This is a suggested resolution. It is not automatically marked as resolved until you confirm.")
 
-    mark_button = st.button(
-        "Mark as Resolved",
-        key=f"resolve_{latest_result.get('ticket_id_source', 'ticket')}",
-        disabled=already_marked,
-    )
+    col_btn, col_indicator = st.columns([1, 2])
+    with col_btn:
+        mark_button = st.button(
+            "Mark as Resolved",
+            key=f"resolve_{latest_result.get('ticket_id_source', 'ticket')}",
+            disabled=already_marked,
+        )
+    
+
     if mark_button:
         resolved_payload = {
             "ticket_id_source": latest_result.get("ticket_id_source", f"portal-{int(datetime.now().timestamp())}"),
@@ -102,12 +106,24 @@ if latest_request and latest_result:
             "metadata": {"owner": "IT", "ui": "user_dashboard", "confirmed_by_user": True},
         }
         try:
-            resolved_result = _post_json(base_url, "/tickets/resolved", resolved_payload)
+            with st.spinner("Marking ticket as resolved..."):
+                resolved_result = _post_json(base_url, "/tickets/resolved", resolved_payload)
             st.session_state["latest_ticket_marked_resolved"] = True
             st.success("Ticket marked as resolved and added to the knowledge base.")
+            try:
+                st.balloons()
+            except Exception:
+                pass
             st.json(resolved_result)
         except Exception as exc:
             st.error(f"Unable to finalize resolution: {exc}")
+    with col_indicator:
+        if st.session_state.get("latest_ticket_marked_resolved"):
+            st.success("Resolved and recorded in KB")
+        elif already_marked:
+            st.info("Marked as resolved")
+        else:
+            st.caption("Not yet confirmed by user")
 
     if st.session_state.get("latest_ticket_marked_resolved"):
         st.info("This ticket has been marked as resolved and recorded.")
