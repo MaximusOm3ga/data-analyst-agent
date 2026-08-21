@@ -1,6 +1,5 @@
 import os
 from typing import Any, Dict, List
-
 from ..classification import llm
 from ..enrichment import enricher
 from ..kb.service import ingest_resolved_ticket, search_kb
@@ -65,7 +64,7 @@ def requires_human_approval(action: str, decision: ClassificationOutput, guardra
     enabled = os.getenv("TRIAGE_APPROVAL_REQUIRED", "true").strip().lower()
     if enabled not in {"1", "true", "yes", "on"}:
         return False
-    if action in {"force_security_route", "auto_route_spotcheck"}:
+    if action in {"force_security_route", "auto_route_spotcheck", "human_review"}:  # ← added "human_review"
         return True
     if guardrail.get("triggered") and action in {"auto_route", "auto_resolve", "force_security_route"}:
         return True
