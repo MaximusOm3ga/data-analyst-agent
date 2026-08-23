@@ -226,28 +226,104 @@ with tabs[1]:
                     f"**Confidence:** `{decision.get('confidence')}`"
                 )
             if result.get("requires_approval"):
-                st.warning("This action requires human approval before execution.")
-                if st.button("Approve Pending Action", key=f"approve_{ticket_id_source}"):
-                    approval_payload = {
-                        "ticket_id_source": ticket_id_source,
-                        "approver": "admin-ui",
-                        "reason": "Approved from admin dashboard",
-                        "approved": True,
-                    }
-                    approval_result = _post_json(base_url, "/tickets/approve", approval_payload)
-                    st.success("Approval recorded")
-                    st.json(approval_result)
+                st.warning("This action requires human approval — review it in the Pending Approvals queue below.")
+                st.session_state["pending_queue"] = None  # force queue refresh on next render
         except Exception as exc:
             st.error(f"Triage failed: {exc}")
 
     st.divider()
     st.subheader("Pending Approvals")
-    if st.button("Refresh Approval Queue"):
+
+    if "pending_queue" not in st.session_state:
+        st.session_state["pending_queue"] = None
+
+    col_refresh, col_count = st.columns([1, 3])
+    with col_refresh:
+        refresh_clicked = st.button("🔄 Refresh Queue")
+    if refresh_clicked or st.session_state["pending_queue"] is None:
         try:
-            pending = _get_json(base_url, "/approval/pending")
-            st.json(pending)
+            st.session_state["pending_queue"] = _get_json(base_url, "/approval/pending").get("pending", [])
         except Exception as exc:
             st.error(f"Failed to load approval queue: {exc}")
+            st.session_state["pending_queue"] = []
+
+    pending_items = st.session_state["pending_queue"] or []
+    with col_count:
+        if pending_items:
+            st.markdown(f"**{len(pending_items)} ticket(s) awaiting review**")
+        else:
+            st.caption("No tickets currently awaiting approval.")
+
+    priority_color = {
+        "P1-Critical": "🔴",
+        "P2-High": "🟠",
+        "P3-Medium": "🟡",
+        "P4-Low": "🟢",
+    }
+
+    for item in pending_items:
+        ticket_id = item.get("ticket_id_source")
+        priority = item.get("priority", "P4-Low")
+        icon = priority_color.get(priority, "⚪")
+
+        with st.container(border=True):
+            st.markdown(
+                f"{icon} **{ticket_id}** &nbsp;|&nbsp; "
+                f"Action: `{item.get('action')}` &nbsp;|&nbsp; "
+                f"Priority: `{priority}` &nbsp;|&nbsp; "
+                f"Queue: `{item.get('queue')}`"
+            )
+            st.caption(item.get("reason", ""))
+
+            with st.expander("Reviewer notes / reason"):
+                reason_text = st.text_input(
+                    "Reason", value="Approved from admin dashboard", key=f"reason_{ticket_id}"
+                )
+                approver_name = st.text_input("Approver", value="admin-ui", key=f"approver_{ticket_id}")
+
+            col_approve, col_reject, col_spacer = st.columns([1, 1, 4])
+            with col_approve:
+                if st.button("✅ Approve", key=f"approve_btn_{ticket_id}"):
+                    try:
+                        result = _post_json(
+                            base_url,
+                            "/tickets/approve",
+                            {
+                                "ticket_id_source": ticket_id,
+                                "approver": approver_name,
+                                "reason": reason_text,
+                                "approved": True,
+                            },
+                        )
+                        st.success(f"Approved {ticket_id}")
+                        st.json(result)
+                        st.session_state["pending_queue"] = [
+                            p for p in pending_items if p.get("ticket_id_source") != ticket_id
+                        ]
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Approval failed: {exc}")
+            with col_reject:
+                if st.button("❌ Reject", key=f"reject_btn_{ticket_id}"):
+                    try:
+                        result = _post_json(
+                            base_url,
+                            "/tickets/approve",
+                            {
+                                "ticket_id_source": ticket_id,
+                                "approver": approver_name,
+                                "reason": reason_text,
+                                "approved": False,
+                            },
+                        )
+                        st.warning(f"Rejected {ticket_id}")
+                        st.json(result)
+                        st.session_state["pending_queue"] = [
+                            p for p in pending_items if p.get("ticket_id_source") != ticket_id
+                        ]
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Rejection failed: {exc}")
 
 with tabs[2]:
     st.subheader("Search KB")
