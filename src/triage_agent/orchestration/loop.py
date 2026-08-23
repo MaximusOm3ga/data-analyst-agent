@@ -91,6 +91,7 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
     final_action = "human_review"
     final_tool_result: Dict[str, Any] = {}
     final_guardrail = {"triggered": False, "reasons": []}
+    final_classifier_mode_used = "unknown"
     status = "completed"
 
     while attempt < MAX_ATTEMPTS:
@@ -106,7 +107,7 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
             }
             for item in kb_results
         ]
-        decision = llm.classify(ticket, enrichment, retrieved_chunks=retrieved_chunks)
+        decision, classifier_mode_used = llm.classify(ticket, enrichment, retrieved_chunks=retrieved_chunks)
         guardrail = security_guardrail(ticket, enrichment)
         if guardrail["triggered"]:
             decision = _build_override_decision(decision, guardrail["reasons"])
@@ -117,6 +118,7 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
             final_decision = decision
             final_action = action
             final_guardrail = guardrail
+            final_classifier_mode_used = classifier_mode_used
             final_tool_result = {
                 "success": False,
                 "requires_approval": True,
@@ -153,6 +155,7 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
                 tool_result=final_tool_result,
                 requires_approval=True,
                 approval_reason=final_tool_result["reason"],
+                classifier_mode_used=final_classifier_mode_used,
             )
 
         tool_result = execute_tool_action(ticket, decision, action, attempt=attempt)
@@ -169,6 +172,7 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
         final_action = action
         final_tool_result = tool_result
         final_guardrail = guardrail
+        final_classifier_mode_used = classifier_mode_used
 
         if tool_result.get("success"):
             if decision.recommended_action == "auto_resolve":
@@ -204,4 +208,5 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
         guardrail_triggered=bool(final_guardrail["triggered"]),
         guardrail_reasons=list(final_guardrail["reasons"]),
         tool_result=final_tool_result,
+        classifier_mode_used=final_classifier_mode_used,
     )

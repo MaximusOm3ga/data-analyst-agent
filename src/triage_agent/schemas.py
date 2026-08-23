@@ -80,6 +80,7 @@ class AgentLoopResult(BaseModel):
     tool_result: Dict[str, Any] = {}
     requires_approval: bool = False
     approval_reason: Optional[str] = None
+    classifier_mode_used: str = "unknown"
 
 
 class TicketApprovalRequest(BaseModel):

@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
@@ -255,7 +255,15 @@ def classify(
     ticket: CommonTicket,
     enrichment: EnrichmentContext,
     retrieved_chunks: Optional[List[Dict[str, Any]]] = None,
-) -> ClassificationOutput:
+) -> Tuple[ClassificationOutput, str]:
+    """Returns (classification, classifier_mode_used).
+
+    classifier_mode_used is one of:
+      - "llm"                    Groq/OpenAI-compatible call succeeded
+      - "heuristic_mock_mode"    TRIAGE_CLASSIFIER_MODE=mock, LLM never attempted
+      - "heuristic_no_api_key"   auto mode, TRIAGE_LLM_API_KEY not set, LLM never attempted
+      - "heuristic_llm_call_failed"  auto mode, LLM call attempted but raised
+    """
     body = (ticket.body_cleaned or ticket.body_raw or "").strip()
     retrieved = retrieved_chunks or []
     if not retrieved:
@@ -269,14 +277,16 @@ def classify(
         mode = "auto"
 
     if mode == "mock":
-        return _heuristic_classify(ticket, enrichment, retrieved)
+        return _heuristic_classify(ticket, enrichment, retrieved), "heuristic_mock_mode"
 
-    try:
-        has_key = bool(os.getenv("TRIAGE_LLM_API_KEY", "").strip())
-        if mode == "llm" or (mode == "auto" and has_key):
-            return _call_openai_compatible_llm(ticket, enrichment, retrieved)
-    except Exception:
-        if mode == "llm":
-            raise
+    has_key = bool(os.getenv("TRIAGE_LLM_API_KEY", "").strip())
 
-    return _heuristic_classify(ticket, enrichment, retrieved)
+    if mode == "llm" or (mode == "auto" and has_key):
+        try:
+            return _call_openai_compatible_llm(ticket, enrichment, retrieved), "llm"
+        except Exception:
+            if mode == "llm":
+                raise
+            return _heuristic_classify(ticket, enrichment, retrieved), "heuristic_llm_call_failed"
+
+    return _heuristic_classify(ticket, enrichment, retrieved), "heuristic_no_api_key"

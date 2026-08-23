@@ -218,6 +218,14 @@ with tabs[1]:
             st.success("Ticket processed")
             st.json(result)
             decision = result.get("decision", {})
+            classifier_mode = result.get("classifier_mode_used", "unknown")
+            mode_badge = {
+                "llm": "🟢 LLM (Groq)",
+                "heuristic_no_api_key": "🟡 Heuristic — no API key set",
+                "heuristic_llm_call_failed": "🔴 Heuristic — LLM call failed",
+                "heuristic_mock_mode": "⚪ Heuristic — mock mode forced",
+            }.get(classifier_mode, f"⚪ {classifier_mode}")
+            st.caption(f"Classifier used: {mode_badge}")
             if decision:
                 st.markdown(
                     f"**Action:** `{result.get('action')}` | "
