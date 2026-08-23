@@ -132,8 +132,9 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
                 "attempt": attempt,
                 "guardrail": guardrail,
                 "reason": "High-risk automated action requires human approval before execution.",
+                "classifier_mode_used": classifier_mode_used,
             }
-            shadow_log.log_prediction(ticket, enrichment, decision)
+            shadow_log.log_prediction(ticket, enrichment, decision, classifier_mode_used=classifier_mode_used)
             shadow_log.log_loop_event(
                 ticket=ticket,
                 attempt=attempt,
@@ -142,6 +143,7 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
                 guardrail=guardrail,
                 approval_required=True,
                 approval_reason=final_tool_result["reason"],
+                classifier_mode_used=classifier_mode_used,
             )
             status = "awaiting_approval"
             return AgentLoopResult(
@@ -159,13 +161,14 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
             )
 
         tool_result = execute_tool_action(ticket, decision, action, attempt=attempt)
-        shadow_log.log_prediction(ticket, enrichment, decision)
+        shadow_log.log_prediction(ticket, enrichment, decision, classifier_mode_used=classifier_mode_used)
         shadow_log.log_loop_event(
             ticket=ticket,
             attempt=attempt,
             action=action,
             tool_result=tool_result,
             guardrail=guardrail,
+            classifier_mode_used=classifier_mode_used,
         )
 
         final_decision = decision
@@ -193,6 +196,7 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
                     classification=decision,
                     summary=success_summary,
                     tool_result=tool_result,
+                    classifier_mode_used=classifier_mode_used,
                 )
             break
 

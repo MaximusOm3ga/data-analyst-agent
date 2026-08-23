@@ -204,6 +204,7 @@ async def approve_ticket(payload: TicketApprovalRequest):
     ticket = pending["ticket"]
     decision = pending["decision"]
     action = pending["action"]
+    classifier_mode_used = pending.get("classifier_mode_used", "unknown")
     tool_result = execute_tool_action(ticket, decision, action, attempt=pending["attempt"])
     shadow_log.log_loop_event(
         ticket=ticket,
@@ -213,6 +214,7 @@ async def approve_ticket(payload: TicketApprovalRequest):
         guardrail=pending.get("guardrail", {"triggered": False, "reasons": []}),
         approval_required=False,
         approval_reason="Approver: " + payload.approver + "; " + payload.reason,
+        classifier_mode_used=classifier_mode_used,
     )
 
     if decision.recommended_action == "auto_resolve":
@@ -228,6 +230,7 @@ async def approve_ticket(payload: TicketApprovalRequest):
             classification=decision,
             summary=success_summary,
             tool_result=tool_result,
+            classifier_mode_used=classifier_mode_used,
         )
 
     PENDING_APPROVALS.pop(payload.ticket_id_source, None)

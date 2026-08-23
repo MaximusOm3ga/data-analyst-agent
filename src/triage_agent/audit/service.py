@@ -152,7 +152,15 @@ def record_audit_event(event_type: str, payload: Dict[str, Any], ticket_id_sourc
         return {"status": "error", "event_type": event_type, "error": str(exc)}
 
 
-def record_resolved_ticket(ticket: Dict[str, Any], resolution_summary: str, category: str, queue: str, priority: str, source_channel: str = "web_form") -> Dict[str, Any]:
+def record_resolved_ticket(
+    ticket: Dict[str, Any],
+    resolution_summary: str,
+    category: str,
+    queue: str,
+    priority: str,
+    source_channel: str = "web_form",
+    classifier_mode_used: Optional[str] = None,
+) -> Dict[str, Any]:
     dsn = _audit_dsn()
     if not dsn:
         return {"status": "skipped", "reason": "AUDIT_DB_DSN not configured"}
@@ -167,6 +175,7 @@ def record_resolved_ticket(ticket: Dict[str, Any], resolution_summary: str, cate
         "category": category,
         "queue": queue,
         "priority": priority,
+        "classifier_mode_used": classifier_mode_used,
         "created_at": datetime.utcnow().isoformat(),
     }
 
