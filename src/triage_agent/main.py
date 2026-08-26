@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import ValidationError
 from .schemas import AgentLoopResult, CommonTicket, KnowledgeBaseIngestRequest, KnowledgeBaseSearchResult, ResolvedTicketRecord, TicketApprovalRequest
-from .kb.service import ingest_kb_documents, ingest_resolved_ticket, search_kb, initialize_kb_store
+from .kb.service import ingest_kb_documents, ingest_resolved_ticket, search_kb, initialize_kb_store, clear_kb_store
 from .logging import shadow_log
 from .orchestration.loop import PENDING_APPROVALS, run_ticket_loop
 from .rag.store import get_store_name
@@ -129,6 +129,26 @@ async def kb_init_store():
         return initialize_kb_store()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/kb/documents")
+async def kb_clear_store(confirm: str = ""):
+    """Irreversibly deletes every document in the knowledge base.
+
+    Requires ?confirm=DELETE to guard against accidental calls, since there
+    is currently no authentication on this endpoint and no undo.
+    """
+    if confirm != "DELETE":
+        raise HTTPException(
+            status_code=400,
+            detail="This permanently deletes the entire knowledge base. Pass ?confirm=DELETE to proceed.",
+        )
+    try:
+        return clear_kb_store()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/kb/search", response_model=list[KnowledgeBaseSearchResult])
 async def kb_search(query: str, limit: int = 5):
     try:
@@ -217,8 +237,16 @@ async def approve_ticket(payload: TicketApprovalRequest):
         classifier_mode_used=classifier_mode_used,
     )
 
-    if decision.recommended_action == "auto_resolve":
-        success_summary = tool_result.get("message") or decision.summary or "Ticket resolved successfully after approval."
+    # A human approving a pending ticket IS the resolution decision — log it as
+    # resolved for every routed action except force_security_route, where the
+    # ticket is being handed to the security team rather than closed here.
+    if action != "force_security_route":
+        success_summary = (
+            payload.resolution_summary
+            or tool_result.get("message")
+            or decision.summary
+            or f"Approved by {payload.approver} after human review: {payload.reason}"
+        )
         ingest_resolved_ticket(
             ticket=ticket,
             classification=decision,

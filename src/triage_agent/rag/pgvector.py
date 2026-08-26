@@ -103,3 +103,12 @@ class PgVectorStore(VectorStore):
                 }
             )
         return results
+
+    def clear(self) -> int:
+        with self._psycopg.connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM rag_documents")
+                count = cur.fetchone()[0]
+                cur.execute("TRUNCATE TABLE rag_documents")
+            conn.commit()
+        return count

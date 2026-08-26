@@ -30,6 +30,13 @@ def _get_json(base_url: str, path: str, params: Dict[str, Any] = None) -> Any:
         return response.json()
 
 
+def _delete_json(base_url: str, path: str, params: Dict[str, Any] = None) -> Any:
+    with httpx.Client(timeout=60) as client:
+        response = client.delete(f"{base_url}{path}", params=params)
+        response.raise_for_status()
+        return response.json()
+
+
 def _read_last_log_lines(repo_root: Path, filename: str, limit: int = 100) -> List[str]:
     log_path = repo_root / filename
     if not log_path.exists():
@@ -152,6 +159,23 @@ with tabs[0]:
                 st.error(f"Upload failed: {exc}")
 
     st.divider()
+    with st.expander("⚠️ Danger Zone — Clear Knowledge Base"):
+        st.warning(
+            "This permanently deletes every document in the knowledge base "
+            "(all imported docs and all auto-written resolved-ticket entries). "
+            "This cannot be undone."
+        )
+        nuke_confirm_text = st.text_input(
+            "Type DELETE to enable the button below", value="", key="nuke_kb_confirm"
+        )
+        if st.button("🔥 Nuke Knowledge Base", disabled=(nuke_confirm_text != "DELETE")):
+            try:
+                result = _delete_json(base_url, "/kb/documents", params={"confirm": "DELETE"})
+                st.success(f"Knowledge base cleared — {result.get('documents_removed', 0)} document(s) removed.")
+            except Exception as exc:
+                st.error(f"Clear failed: {exc}")
+
+    st.divider()
     st.subheader("Upload Zipped KB Folder")
     zip_file = st.file_uploader("Upload .zip containing KB files", type=["zip"])
     zip_category = st.text_input("Default category for zip docs", value="Other")
@@ -235,27 +259,25 @@ with tabs[1]:
                 )
             if result.get("requires_approval"):
                 st.warning("This action requires human approval — review it in the Pending Approvals queue below.")
-                st.session_state["pending_queue"] = None  # force queue refresh on next render
         except Exception as exc:
             st.error(f"Triage failed: {exc}")
 
     st.divider()
     st.subheader("Pending Approvals")
 
-    if "pending_queue" not in st.session_state:
-        st.session_state["pending_queue"] = None
-
     col_refresh, col_count = st.columns([1, 3])
     with col_refresh:
         refresh_clicked = st.button("🔄 Refresh Queue")
-    if refresh_clicked or st.session_state["pending_queue"] is None:
-        try:
-            st.session_state["pending_queue"] = _get_json(base_url, "/approval/pending").get("pending", [])
-        except Exception as exc:
-            st.error(f"Failed to load approval queue: {exc}")
-            st.session_state["pending_queue"] = []
 
-    pending_items = st.session_state["pending_queue"] or []
+    # Always fetch fresh on every render of this tab — tickets can arrive from
+    # any client (admin console, end-user portal, other channels) at any time,
+    # so a cached/stale list would hide new arrivals until a manual refresh.
+    try:
+        pending_items = _get_json(base_url, "/approval/pending").get("pending", [])
+    except Exception as exc:
+        st.error(f"Failed to load approval queue: {exc}")
+        pending_items = []
+
     with col_count:
         if pending_items:
             st.markdown(f"**{len(pending_items)} ticket(s) awaiting review**")
@@ -283,7 +305,13 @@ with tabs[1]:
             )
             st.caption(item.get("reason", ""))
 
-            with st.expander("Reviewer notes / reason"):
+            with st.expander("Reviewer notes / resolution"):
+                resolution_text = st.text_area(
+                    "Resolution summary (recorded in the resolved-ticket log and KB on approval)",
+                    value="",
+                    placeholder="What was actually done to resolve this ticket, if anything...",
+                    key=f"resolution_{ticket_id}",
+                )
                 reason_text = st.text_input(
                     "Reason", value="Approved from admin dashboard", key=f"reason_{ticket_id}"
                 )
@@ -301,13 +329,11 @@ with tabs[1]:
                                 "approver": approver_name,
                                 "reason": reason_text,
                                 "approved": True,
+                                "resolution_summary": resolution_text or None,
                             },
                         )
                         st.success(f"Approved {ticket_id}")
                         st.json(result)
-                        st.session_state["pending_queue"] = [
-                            p for p in pending_items if p.get("ticket_id_source") != ticket_id
-                        ]
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Approval failed: {exc}")
@@ -326,9 +352,6 @@ with tabs[1]:
                         )
                         st.warning(f"Rejected {ticket_id}")
                         st.json(result)
-                        st.session_state["pending_queue"] = [
-                            p for p in pending_items if p.get("ticket_id_source") != ticket_id
-                        ]
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Rejection failed: {exc}")

@@ -41,3 +41,9 @@ class InMemoryVectorStore(VectorStore):
         for score, d in scored[:k]:
             results.append({"id": d["id"], "text": d["text"], "metadata": d["metadata"], "score": score})
         return results
+
+    def clear(self) -> int:
+        count = len(self._docs)
+        self._docs = []
+        self._next_id = 1
+        return count

@@ -67,63 +67,74 @@ already_marked = bool(st.session_state.get("latest_ticket_marked_resolved"))
 if latest_request and latest_result:
     decision = latest_result.get("decision", {})
     tool_result = latest_result.get("tool_result", {})
+    requires_approval = bool(latest_result.get("requires_approval"))
     guidance = tool_result.get("message") or decision.get("reasoning") or "Follow up with support if issue persists."
 
-    st.success("Ticket submitted and processed.")
-    st.subheader("Suggested Resolution")
+    st.success("Ticket submitted.")
     st.markdown(f"**Ticket ID:** {latest_result.get('ticket_id_source', 'N/A')}")
-    st.markdown(f"**Outcome:** {latest_result.get('action', 'N/A').replace('_', ' ').title()}")
-    st.markdown(f"**Summary:** {decision.get('summary', 'No summary provided.')}")
-    st.markdown(f"**Assigned Team:** {decision.get('queue', 'ServiceDesk-L1')}")
-    st.markdown(f"**Priority:** {decision.get('priority', 'P4-Low')}")
 
-    st.subheader("Next Steps")
-    st.write(guidance)
-    st.warning("This is a suggested resolution. It is not automatically marked as resolved until you confirm.")
-
-    col_btn, col_indicator = st.columns([1, 2])
-    with col_btn:
-        mark_button = st.button(
-            "Mark as Resolved",
-            key=f"resolve_{latest_result.get('ticket_id_source', 'ticket')}",
-            disabled=already_marked,
+    if requires_approval:
+        st.subheader("Under Review")
+        st.info(
+            "Your ticket has been flagged for review by our support team before any action is taken. "
+            "This usually happens for higher-priority issues or ones our system isn't fully confident about. "
+            "A team member will follow up — no action is needed from you right now."
         )
-    
+        st.markdown(f"**Priority:** {decision.get('priority', 'P4-Low')}")
+        st.markdown(f"**Assigned Team:** {decision.get('queue', 'ServiceDesk-L1')}")
+    else:
+        st.subheader("Suggested Resolution")
+        st.markdown(f"**Outcome:** {latest_result.get('action', 'N/A').replace('_', ' ').title()}")
+        st.markdown(f"**Summary:** {decision.get('summary', 'No summary provided.')}")
+        st.markdown(f"**Assigned Team:** {decision.get('queue', 'ServiceDesk-L1')}")
+        st.markdown(f"**Priority:** {decision.get('priority', 'P4-Low')}")
 
-    if mark_button:
-        resolved_payload = {
-            "ticket_id_source": latest_result.get("ticket_id_source", f"portal-{int(datetime.now().timestamp())}"),
-            "source_channel": latest_request.get("source_channel", "web_form"),
-            "requester_identifier": latest_request.get("requester_identifier", "user@example.com"),
-            "subject": latest_request.get("subject"),
-            "body_raw": latest_request.get("body_raw", ""),
-            "resolution_summary": decision.get("summary") or guidance,
-            "category": decision.get("category") or "Other",
-            "queue": decision.get("queue") or "ServiceDesk-L1",
-            "priority": decision.get("priority") or "P4-Low",
-            "status": "resolved",
-            "timestamp_received": datetime.now(timezone.utc).isoformat(),
-            "metadata": {"owner": "IT", "ui": "user_dashboard", "confirmed_by_user": True},
-        }
-        try:
-            with st.spinner("Marking ticket as resolved..."):
-                resolved_result = _post_json(base_url, "/tickets/resolved", resolved_payload)
-            st.session_state["latest_ticket_marked_resolved"] = True
-            st.success("Ticket marked as resolved and added to the knowledge base.")
+        st.subheader("Next Steps")
+        st.write(guidance)
+        st.warning("This is a suggested resolution. It is not automatically marked as resolved until you confirm.")
+
+        col_btn, col_indicator = st.columns([1, 2])
+        with col_btn:
+            mark_button = st.button(
+                "Mark as Resolved",
+                key=f"resolve_{latest_result.get('ticket_id_source', 'ticket')}",
+                disabled=already_marked,
+            )
+
+        if mark_button:
+            resolved_payload = {
+                "ticket_id_source": latest_result.get("ticket_id_source", f"portal-{int(datetime.now().timestamp())}"),
+                "source_channel": latest_request.get("source_channel", "web_form"),
+                "requester_identifier": latest_request.get("requester_identifier", "user@example.com"),
+                "subject": latest_request.get("subject"),
+                "body_raw": latest_request.get("body_raw", ""),
+                "resolution_summary": decision.get("summary") or guidance,
+                "category": decision.get("category") or "Other",
+                "queue": decision.get("queue") or "ServiceDesk-L1",
+                "priority": decision.get("priority") or "P4-Low",
+                "status": "resolved",
+                "timestamp_received": datetime.now(timezone.utc).isoformat(),
+                "metadata": {"owner": "IT", "ui": "user_dashboard", "confirmed_by_user": True},
+            }
             try:
-                st.balloons()
-            except Exception:
-                pass
-            st.json(resolved_result)
-        except Exception as exc:
-            st.error(f"Unable to finalize resolution: {exc}")
-    with col_indicator:
-        if st.session_state.get("latest_ticket_marked_resolved"):
-            st.success("Resolved and recorded in KB")
-        elif already_marked:
-            st.info("Marked as resolved")
-        else:
-            st.caption("Not yet confirmed by user")
+                with st.spinner("Marking ticket as resolved..."):
+                    resolved_result = _post_json(base_url, "/tickets/resolved", resolved_payload)
+                st.session_state["latest_ticket_marked_resolved"] = True
+                st.success("Ticket marked as resolved and added to the knowledge base.")
+                try:
+                    st.balloons()
+                except Exception:
+                    pass
+                st.json(resolved_result)
+            except Exception as exc:
+                st.error(f"Unable to finalize resolution: {exc}")
+        with col_indicator:
+            if st.session_state.get("latest_ticket_marked_resolved"):
+                st.success("Resolved and recorded in KB")
+            elif already_marked:
+                st.info("Marked as resolved")
+            else:
+                st.caption("Not yet confirmed by user")
 
-    if st.session_state.get("latest_ticket_marked_resolved"):
-        st.info("This ticket has been marked as resolved and recorded.")
+        if st.session_state.get("latest_ticket_marked_resolved"):
+            st.info("This ticket has been marked as resolved and recorded.")
