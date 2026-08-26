@@ -199,6 +199,20 @@ async def pending_approvals():
                 "reason": item["reason"],
                 "priority": item["decision"].priority,
                 "queue": item["decision"].queue,
+                "category": item["decision"].category,
+                "subcategory": item["decision"].subcategory,
+                "confidence": item["decision"].confidence,
+                "recommended_action": item["decision"].recommended_action,
+                "summary": item["decision"].summary,
+                "reasoning": item["decision"].reasoning,
+                "urgency_flags": item["decision"].urgency_flags,
+                "subject": item["ticket"].subject,
+                "requester_identifier": item["ticket"].requester_identifier,
+                "source_channel": item["ticket"].source_channel,
+                "body_raw": item["ticket"].body_raw,
+                "guardrail_triggered": bool(item["guardrail"].get("triggered")),
+                "guardrail_reasons": item["guardrail"].get("reasons", []),
+                "classifier_mode_used": item.get("classifier_mode_used", "unknown"),
             }
             for ticket_id, item in sorted(PENDING_APPROVALS.items())
         ]
