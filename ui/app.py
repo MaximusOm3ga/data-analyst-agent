@@ -185,7 +185,7 @@ with st.expander("Quick access", expanded=False):
         except Exception as exc:
             st.error(f"Health check failed: {exc}")
 
-tabs = st.tabs(["KB Ingestion", "Ticket Triage", "KB Search", "Resolved Tickets", "Audit Logs"])
+tabs = st.tabs(["KB Ingestion", "Ticket Triage", "KB Search", "Resolve Tickets", "Audit Logs"])
 
 with tabs[0]:
     st.subheader("Upload KB Documents")
