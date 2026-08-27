@@ -112,3 +112,11 @@ class PgVectorStore(VectorStore):
                 cur.execute("TRUNCATE TABLE rag_documents")
             conn.commit()
         return count
+
+    def delete_document(self, doc_id: str) -> bool:
+        with self._psycopg.connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM rag_documents WHERE doc_id = %s", (doc_id,))
+                deleted = cur.rowcount
+            conn.commit()
+        return deleted > 0

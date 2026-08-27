@@ -47,3 +47,8 @@ class InMemoryVectorStore(VectorStore):
         self._docs = []
         self._next_id = 1
         return count
+
+    def delete_document(self, doc_id: str) -> bool:
+        original_len = len(self._docs)
+        self._docs = [d for d in self._docs if d["id"] != doc_id]
+        return len(self._docs) < original_len

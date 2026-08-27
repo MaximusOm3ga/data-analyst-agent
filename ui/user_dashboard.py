@@ -19,7 +19,7 @@ def _post_json(base_url: str, path: str, payload: Dict[str, Any]) -> Dict[str, A
         return response.json()
 
 
-st.title("🛠️ IT Support Ticket Portal")
+st.title("🛠 IT Support Ticket Portal")
 st.caption("Submit a ticket and receive triage resolution guidance")
 
 default_api = "http://127.0.0.1:8000"

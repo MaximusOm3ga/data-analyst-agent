@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import ValidationError
 from .schemas import AgentLoopResult, CommonTicket, KnowledgeBaseIngestRequest, KnowledgeBaseSearchResult, ResolvedTicketRecord, TicketApprovalRequest
-from .kb.service import ingest_kb_documents, ingest_resolved_ticket, search_kb, initialize_kb_store, clear_kb_store
+from .kb.service import ingest_kb_documents, ingest_resolved_ticket, search_kb, initialize_kb_store, clear_kb_store, delete_kb_document
 from .logging import shadow_log
 from .orchestration.loop import PENDING_APPROVALS, run_ticket_loop
 from .rag.store import get_store_name
@@ -147,6 +147,18 @@ async def kb_clear_store(confirm: str = ""):
         return clear_kb_store()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/kb/documents/{doc_id}")
+async def kb_delete_document(doc_id: str):
+    """Deletes a single knowledge base document by id."""
+    try:
+        result = delete_kb_document(doc_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if result["status"] == "not_found":
+        raise HTTPException(status_code=404, detail=f"No KB document found with id '{doc_id}'.")
+    return result
 
 
 @app.get("/kb/search", response_model=list[KnowledgeBaseSearchResult])

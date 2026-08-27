@@ -158,7 +158,7 @@ def _docs_from_zip(
     return {"documents": docs, "skipped_files": skipped}
 
 
-st.title("🎫 IT Ticket Triage Agent - Admin Dashboard")
+st.title("IT Ticket Triage Agent - Admin Dashboard")
 st.caption("Admin UI for KB ingestion, ticket triage inspection, KB search, and audit logs")
 
 default_api = "http://127.0.0.1:8000"
@@ -227,7 +227,7 @@ with tabs[0]:
                 st.error(f"Upload failed: {exc}")
 
     st.divider()
-    with st.expander("⚠️ Danger Zone — Clear Knowledge Base"):
+    with st.expander("⚠Danger Zone — Clear Knowledge Base"):
         st.warning(
             "This permanently deletes every document in the knowledge base "
             "(all imported docs and all auto-written resolved-ticket entries). "
@@ -236,7 +236,7 @@ with tabs[0]:
         nuke_confirm_text = st.text_input(
             "Type DELETE to enable the button below", value="", key="nuke_kb_confirm"
         )
-        if st.button("🔥 Nuke Knowledge Base", disabled=(nuke_confirm_text != "DELETE")):
+        if st.button("Nuke Knowledge Base", disabled=(nuke_confirm_text != "DELETE")):
             try:
                 result = _delete_json(base_url, "/kb/documents", params={"confirm": "DELETE"})
                 st.success(f"Knowledge base cleared — {result.get('documents_removed', 0)} document(s) removed.")
@@ -375,7 +375,7 @@ with tabs[1]:
 
             if item.get("guardrail_triggered"):
                 st.error(
-                    "🚨 Security guardrail triggered: " + "; ".join(item.get("guardrail_reasons", []) or ["(no reason text)"])
+                    "Security guardrail triggered: " + "; ".join(item.get("guardrail_reasons", []) or ["(no reason text)"])
                 )
 
             st.markdown(f"**Subject:** {item.get('subject') or '(no subject)'}")
@@ -419,7 +419,7 @@ with tabs[1]:
 
             col_approve, col_reject, col_spacer = st.columns([1, 1, 4])
             with col_approve:
-                if st.button("✅ Approve", key=f"approve_btn_{ticket_id}"):
+                if st.button("Approve", key=f"approve_btn_{ticket_id}"):
                     try:
                         result = _post_json(
                             base_url,
@@ -438,7 +438,7 @@ with tabs[1]:
                     except Exception as exc:
                         st.error(f"Approval failed: {exc}")
             with col_reject:
-                if st.button("❌ Reject", key=f"reject_btn_{ticket_id}"):
+                if st.button("Reject", key=f"reject_btn_{ticket_id}"):
                     try:
                         result = _post_json(
                             base_url,
@@ -463,24 +463,62 @@ with tabs[2]:
     if st.button("Search"):
         try:
             result = _get_json(base_url, "/kb/search", params={"query": query, "limit": limit})
-            st.json(result)
+            st.session_state["kb_search_results"] = result
         except Exception as exc:
             st.error(f"Search failed: {exc}")
 
-with tabs[3]:
-    st.subheader("Resolved Ticket Registry")
-    st.write("Successful resolutions are ingested into the KB and stored in the resolved ticket log.")
-
-    resolved_log_choice = st.selectbox("Resolved ticket log", ["resolved_tickets.log", "agent_loop_audit.log", "shadow_predictions.log"], key="resolved_log_choice")
-    resolved_lines_limit = st.slider("Lines", min_value=20, max_value=500, value=100, step=20, key="resolved_lines_limit")
-    if st.button("Refresh Resolved Tickets", key="refresh_resolved_tickets"):
-        lines = _read_last_log_lines(repo_root, resolved_log_choice, resolved_lines_limit)
-        if not lines:
-            st.info("No resolved ticket records found yet.")
-        else:
-            st.code("".join(lines), language="json")
+    search_results = st.session_state.get("kb_search_results")
+    if search_results:
+        st.caption(f"{len(search_results)} result(s)")
+        for doc in search_results:
+            with st.container(border=True):
+                st.markdown(f"**{doc.get('id')}** &nbsp;|&nbsp; score: `{doc.get('score'):.3f}`")
+                st.write(doc.get("text", "")[:400] + ("..." if len(doc.get("text", "")) > 400 else ""))
+                with st.expander("Metadata"):
+                    st.json(doc.get("metadata", {}))
+                if st.button("🗑️ Delete this document", key=f"delete_doc_{doc.get('id')}"):
+                    try:
+                        del_result = _delete_json(base_url, f"/kb/documents/{doc.get('id')}")
+                        st.success(f"Deleted {doc.get('id')}")
+                        st.session_state["kb_search_results"] = [
+                            d for d in search_results if d.get("id") != doc.get("id")
+                        ]
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Delete failed: {exc}")
+    elif search_results is not None:
+        st.info("No matching documents.")
 
     st.divider()
+    st.caption("Already know the document ID? Delete it directly:")
+    col_did, col_dbtn = st.columns([3, 1])
+    with col_did:
+        direct_delete_id = st.text_input("Document ID", key="direct_delete_id", label_visibility="collapsed", placeholder="e.g. resolved-TCK-1042")
+    with col_dbtn:
+        if st.button("🗑️ Delete by ID"):
+            if direct_delete_id.strip():
+                try:
+                    del_result = _delete_json(base_url, f"/kb/documents/{direct_delete_id.strip()}")
+                    st.success(f"Deleted {direct_delete_id.strip()}")
+                except Exception as exc:
+                    st.error(f"Delete failed: {exc}")
+            else:
+                st.warning("Enter a document ID first.")
+
+with tabs[3]:
+    # st.subheader("Resolved Ticket Registry")
+    # st.write("Successful resolutions are ingested into the KB and stored in the resolved ticket log.")
+    #
+    # resolved_log_choice = st.selectbox("Resolved ticket log", ["resolved_tickets.log", "agent_loop_audit.log", "shadow_predictions.log"], key="resolved_log_choice")
+    # resolved_lines_limit = st.slider("Lines", min_value=20, max_value=500, value=100, step=20, key="resolved_lines_limit")
+    # if st.button("Refresh Resolved Tickets", key="refresh_resolved_tickets"):
+    #     lines = _read_last_log_lines(repo_root, resolved_log_choice, resolved_lines_limit)
+    #     if not lines:
+    #         st.info("No resolved ticket records found yet.")
+    #     else:
+    #         st.code("".join(lines), language="json")
+    #
+    # st.divider()
     st.subheader("Manually Add Resolved Ticket to KB")
     with st.form("manual_resolved_ticket"):
         manual_ticket_id = st.text_input("Ticket ID", value=f"manual-{int(datetime.now().timestamp())}")
