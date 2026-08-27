@@ -227,7 +227,7 @@ with tabs[0]:
                 st.error(f"Upload failed: {exc}")
 
     st.divider()
-    with st.expander("⚠Danger Zone — Clear Knowledge Base"):
+    with st.expander("Danger Zone — Clear Knowledge Base"):
         st.warning(
             "This permanently deletes every document in the knowledge base "
             "(all imported docs and all auto-written resolved-ticket entries). "
@@ -476,7 +476,7 @@ with tabs[2]:
                 st.write(doc.get("text", "")[:400] + ("..." if len(doc.get("text", "")) > 400 else ""))
                 with st.expander("Metadata"):
                     st.json(doc.get("metadata", {}))
-                if st.button("🗑️ Delete this document", key=f"delete_doc_{doc.get('id')}"):
+                if st.button("Delete this document", key=f"delete_doc_{doc.get('id')}"):
                     try:
                         del_result = _delete_json(base_url, f"/kb/documents/{doc.get('id')}")
                         st.success(f"Deleted {doc.get('id')}")
@@ -495,7 +495,7 @@ with tabs[2]:
     with col_did:
         direct_delete_id = st.text_input("Document ID", key="direct_delete_id", label_visibility="collapsed", placeholder="e.g. resolved-TCK-1042")
     with col_dbtn:
-        if st.button("🗑️ Delete by ID"):
+        if st.button("Delete by ID"):
             if direct_delete_id.strip():
                 try:
                     del_result = _delete_json(base_url, f"/kb/documents/{direct_delete_id.strip()}")
