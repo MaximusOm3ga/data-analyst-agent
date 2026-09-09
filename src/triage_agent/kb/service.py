@@ -9,6 +9,18 @@ def initialize_kb_store() -> Dict[str, Any]:
     return {"status": "initialized"}
 
 
+def clear_kb_store() -> Dict[str, Any]:
+    removed = default_vector_store.clear()
+    return {"status": "cleared", "documents_removed": removed}
+
+
+def delete_kb_document(doc_id: str) -> Dict[str, Any]:
+    found = default_vector_store.delete_document(doc_id)
+    if not found:
+        return {"status": "not_found", "doc_id": doc_id}
+    return {"status": "deleted", "doc_id": doc_id}
+
+
 def ingest_kb_documents(documents: List[KnowledgeBaseDocument]) -> Dict[str, Any]:
     payload = []
     for doc in documents:

@@ -88,3 +88,4 @@ class TicketApprovalRequest(BaseModel):
     approver: str = "admin"
     reason: str = "Approved by operator"
     approved: bool = True
+    resolution_summary: Optional[str] = None

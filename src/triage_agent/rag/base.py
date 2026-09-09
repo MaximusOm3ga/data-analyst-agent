@@ -17,3 +17,13 @@ class VectorStore(ABC):
     def retrieve(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         """Retrieve top-k documents for the given query. Return list of dicts with keys: id, text, metadata, score."""
         raise NotImplementedError
+
+    @abstractmethod
+    def clear(self) -> int:
+        """Delete every document in the store. Returns the number of documents removed."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete_document(self, doc_id: str) -> bool:
+        """Delete a single document by its id. Returns True if a document was removed, False if no match was found."""
+        raise NotImplementedError

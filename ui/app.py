@@ -1,7 +1,7 @@
 import io
 import json
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -30,6 +30,13 @@ def _get_json(base_url: str, path: str, params: Dict[str, Any] = None) -> Any:
         return response.json()
 
 
+def _delete_json(base_url: str, path: str, params: Dict[str, Any] = None) -> Any:
+    with httpx.Client(timeout=60) as client:
+        response = client.delete(f"{base_url}{path}", params=params)
+        response.raise_for_status()
+        return response.json()
+
+
 def _read_last_log_lines(repo_root: Path, filename: str, limit: int = 100) -> List[str]:
     log_path = repo_root / filename
     if not log_path.exists():
@@ -37,6 +44,74 @@ def _read_last_log_lines(repo_root: Path, filename: str, limit: int = 100) -> Li
     with log_path.open("r", encoding="utf-8") as file:
         lines = file.readlines()
     return lines[-limit:]
+
+
+ALL_LOG_FILES = ["agent_loop_audit.log", "shadow_predictions.log", "resolved_tickets.log"]
+
+
+def _load_log_entries(repo_root: Path, filename: str, max_lines: int = 2000) -> List[Dict[str, Any]]:
+    """Reads the most recent max_lines from a log file and parses each as JSON.
+    Malformed lines are skipped rather than breaking the whole read."""
+    log_path = repo_root / filename
+    if not log_path.exists():
+        return []
+    with log_path.open("r", encoding="utf-8") as file:
+        raw_lines = file.readlines()[-max_lines:]
+    entries: List[Dict[str, Any]] = []
+    for raw in raw_lines:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            entry = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        entry["_source_log"] = filename
+        entries.append(entry)
+    return entries
+
+
+def _parse_entry_timestamp(entry: Dict[str, Any]):
+    ts_raw = entry.get("timestamp")
+    if not ts_raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def _filter_log_entries(
+    entries: List[Dict[str, Any]],
+    search_text: str = "",
+    classifier_modes: List[str] = None,
+    actions: List[str] = None,
+    ticket_id: str = "",
+    start_dt=None,
+    end_dt=None,
+) -> List[Dict[str, Any]]:
+    search_text = (search_text or "").strip().lower()
+    ticket_id = (ticket_id or "").strip().lower()
+    results = []
+    for entry in entries:
+        if ticket_id and ticket_id not in str(entry.get("ticket_id_source", "")).lower():
+            continue
+        if search_text and search_text not in json.dumps(entry).lower():
+            continue
+        if classifier_modes and entry.get("classifier_mode_used") not in classifier_modes:
+            continue
+        if actions and entry.get("action") not in actions:
+            continue
+        if start_dt or end_dt:
+            ts = _parse_entry_timestamp(entry)
+            if ts is None:
+                continue
+            if start_dt and ts < start_dt:
+                continue
+            if end_dt and ts > end_dt:
+                continue
+        results.append(entry)
+    return results
 
 
 def _docs_from_zip(
@@ -83,7 +158,7 @@ def _docs_from_zip(
     return {"documents": docs, "skipped_files": skipped}
 
 
-st.title("🎫 IT Ticket Triage Agent - Admin Dashboard")
+st.title("IT Ticket Triage Agent - Admin Dashboard")
 st.caption("Admin UI for KB ingestion, ticket triage inspection, KB search, and audit logs")
 
 default_api = "http://127.0.0.1:8000"
@@ -110,7 +185,7 @@ with st.expander("Quick access", expanded=False):
         except Exception as exc:
             st.error(f"Health check failed: {exc}")
 
-tabs = st.tabs(["KB Ingestion", "Ticket Triage", "KB Search", "Resolved Tickets", "Audit Logs"])
+tabs = st.tabs(["KB Ingestion", "Ticket Triage", "KB Search", "Resolve Tickets", "Audit Logs"])
 
 with tabs[0]:
     st.subheader("Upload KB Documents")
@@ -150,6 +225,23 @@ with tabs[0]:
                 st.json(result)
             except Exception as exc:
                 st.error(f"Upload failed: {exc}")
+
+    st.divider()
+    with st.expander("Danger Zone — Clear Knowledge Base"):
+        st.warning(
+            "This permanently deletes every document in the knowledge base "
+            "(all imported docs and all auto-written resolved-ticket entries). "
+            "This cannot be undone."
+        )
+        nuke_confirm_text = st.text_input(
+            "Type DELETE to enable the button below", value="", key="nuke_kb_confirm"
+        )
+        if st.button("Nuke Knowledge Base", disabled=(nuke_confirm_text != "DELETE")):
+            try:
+                result = _delete_json(base_url, "/kb/documents", params={"confirm": "DELETE"})
+                st.success(f"Knowledge base cleared — {result.get('documents_removed', 0)} document(s) removed.")
+            except Exception as exc:
+                st.error(f"Clear failed: {exc}")
 
     st.divider()
     st.subheader("Upload Zipped KB Folder")
@@ -235,27 +327,25 @@ with tabs[1]:
                 )
             if result.get("requires_approval"):
                 st.warning("This action requires human approval — review it in the Pending Approvals queue below.")
-                st.session_state["pending_queue"] = None  # force queue refresh on next render
         except Exception as exc:
             st.error(f"Triage failed: {exc}")
 
     st.divider()
     st.subheader("Pending Approvals")
 
-    if "pending_queue" not in st.session_state:
-        st.session_state["pending_queue"] = None
-
     col_refresh, col_count = st.columns([1, 3])
     with col_refresh:
         refresh_clicked = st.button("🔄 Refresh Queue")
-    if refresh_clicked or st.session_state["pending_queue"] is None:
-        try:
-            st.session_state["pending_queue"] = _get_json(base_url, "/approval/pending").get("pending", [])
-        except Exception as exc:
-            st.error(f"Failed to load approval queue: {exc}")
-            st.session_state["pending_queue"] = []
 
-    pending_items = st.session_state["pending_queue"] or []
+    # Always fetch fresh on every render of this tab — tickets can arrive from
+    # any client (admin console, end-user portal, other channels) at any time,
+    # so a cached/stale list would hide new arrivals until a manual refresh.
+    try:
+        pending_items = _get_json(base_url, "/approval/pending").get("pending", [])
+    except Exception as exc:
+        st.error(f"Failed to load approval queue: {exc}")
+        pending_items = []
+
     with col_count:
         if pending_items:
             st.markdown(f"**{len(pending_items)} ticket(s) awaiting review**")
@@ -281,9 +371,47 @@ with tabs[1]:
                 f"Priority: `{priority}` &nbsp;|&nbsp; "
                 f"Queue: `{item.get('queue')}`"
             )
-            st.caption(item.get("reason", ""))
+            st.caption(f"Why it's here: {item.get('reason', '')}")
 
-            with st.expander("Reviewer notes / reason"):
+            if item.get("guardrail_triggered"):
+                st.error(
+                    "Security guardrail triggered: " + "; ".join(item.get("guardrail_reasons", []) or ["(no reason text)"])
+                )
+
+            st.markdown(f"**Subject:** {item.get('subject') or '(no subject)'}")
+            st.markdown(
+                f"**From:** {item.get('requester_identifier', 'unknown')} "
+                f"via `{item.get('source_channel', 'unknown')}`"
+            )
+            with st.expander("Original ticket body", expanded=False):
+                st.write(item.get("body_raw") or "(empty)")
+
+            st.markdown("**What the classifier is asking to do:**")
+            col_cls1, col_cls2, col_cls3 = st.columns(3)
+            with col_cls1:
+                st.metric("Category", item.get("category") or "—")
+            with col_cls2:
+                st.metric("Confidence", f"{item.get('confidence', 0):.0%}" if item.get("confidence") is not None else "—")
+            with col_cls3:
+                st.metric("Recommended action", item.get("recommended_action") or "—")
+
+            if item.get("urgency_flags"):
+                st.markdown("**Urgency flags:** " + ", ".join(item["urgency_flags"]))
+
+            st.markdown(f"**Classifier summary:** {item.get('summary') or '(none provided)'}")
+            if item.get("reasoning"):
+                with st.expander("Classifier reasoning"):
+                    st.write(item["reasoning"])
+
+            st.caption(f"Classifier used: {item.get('classifier_mode_used', 'unknown')}")
+
+            with st.expander("Reviewer notes / resolution"):
+                resolution_text = st.text_area(
+                    "Resolution summary (recorded in the resolved-ticket log and KB on approval)",
+                    value="",
+                    placeholder="What was actually done to resolve this ticket, if anything...",
+                    key=f"resolution_{ticket_id}",
+                )
                 reason_text = st.text_input(
                     "Reason", value="Approved from admin dashboard", key=f"reason_{ticket_id}"
                 )
@@ -291,7 +419,7 @@ with tabs[1]:
 
             col_approve, col_reject, col_spacer = st.columns([1, 1, 4])
             with col_approve:
-                if st.button("✅ Approve", key=f"approve_btn_{ticket_id}"):
+                if st.button("Approve", key=f"approve_btn_{ticket_id}"):
                     try:
                         result = _post_json(
                             base_url,
@@ -301,18 +429,16 @@ with tabs[1]:
                                 "approver": approver_name,
                                 "reason": reason_text,
                                 "approved": True,
+                                "resolution_summary": resolution_text or None,
                             },
                         )
                         st.success(f"Approved {ticket_id}")
                         st.json(result)
-                        st.session_state["pending_queue"] = [
-                            p for p in pending_items if p.get("ticket_id_source") != ticket_id
-                        ]
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Approval failed: {exc}")
             with col_reject:
-                if st.button("❌ Reject", key=f"reject_btn_{ticket_id}"):
+                if st.button("Reject", key=f"reject_btn_{ticket_id}"):
                     try:
                         result = _post_json(
                             base_url,
@@ -326,9 +452,6 @@ with tabs[1]:
                         )
                         st.warning(f"Rejected {ticket_id}")
                         st.json(result)
-                        st.session_state["pending_queue"] = [
-                            p for p in pending_items if p.get("ticket_id_source") != ticket_id
-                        ]
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Rejection failed: {exc}")
@@ -340,24 +463,62 @@ with tabs[2]:
     if st.button("Search"):
         try:
             result = _get_json(base_url, "/kb/search", params={"query": query, "limit": limit})
-            st.json(result)
+            st.session_state["kb_search_results"] = result
         except Exception as exc:
             st.error(f"Search failed: {exc}")
 
-with tabs[3]:
-    st.subheader("Resolved Ticket Registry")
-    st.write("Successful resolutions are ingested into the KB and stored in the resolved ticket log.")
-
-    resolved_log_choice = st.selectbox("Resolved ticket log", ["resolved_tickets.log", "agent_loop_audit.log", "shadow_predictions.log"], key="resolved_log_choice")
-    resolved_lines_limit = st.slider("Lines", min_value=20, max_value=500, value=100, step=20, key="resolved_lines_limit")
-    if st.button("Refresh Resolved Tickets", key="refresh_resolved_tickets"):
-        lines = _read_last_log_lines(repo_root, resolved_log_choice, resolved_lines_limit)
-        if not lines:
-            st.info("No resolved ticket records found yet.")
-        else:
-            st.code("".join(lines), language="json")
+    search_results = st.session_state.get("kb_search_results")
+    if search_results:
+        st.caption(f"{len(search_results)} result(s)")
+        for doc in search_results:
+            with st.container(border=True):
+                st.markdown(f"**{doc.get('id')}** &nbsp;|&nbsp; score: `{doc.get('score'):.3f}`")
+                st.write(doc.get("text", "")[:400] + ("..." if len(doc.get("text", "")) > 400 else ""))
+                with st.expander("Metadata"):
+                    st.json(doc.get("metadata", {}))
+                if st.button("Delete this document", key=f"delete_doc_{doc.get('id')}"):
+                    try:
+                        del_result = _delete_json(base_url, f"/kb/documents/{doc.get('id')}")
+                        st.success(f"Deleted {doc.get('id')}")
+                        st.session_state["kb_search_results"] = [
+                            d for d in search_results if d.get("id") != doc.get("id")
+                        ]
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Delete failed: {exc}")
+    elif search_results is not None:
+        st.info("No matching documents.")
 
     st.divider()
+    st.caption("Already know the document ID? Delete it directly:")
+    col_did, col_dbtn = st.columns([3, 1])
+    with col_did:
+        direct_delete_id = st.text_input("Document ID", key="direct_delete_id", label_visibility="collapsed", placeholder="e.g. resolved-TCK-1042")
+    with col_dbtn:
+        if st.button("Delete by ID"):
+            if direct_delete_id.strip():
+                try:
+                    del_result = _delete_json(base_url, f"/kb/documents/{direct_delete_id.strip()}")
+                    st.success(f"Deleted {direct_delete_id.strip()}")
+                except Exception as exc:
+                    st.error(f"Delete failed: {exc}")
+            else:
+                st.warning("Enter a document ID first.")
+
+with tabs[3]:
+    # st.subheader("Resolved Ticket Registry")
+    # st.write("Successful resolutions are ingested into the KB and stored in the resolved ticket log.")
+    #
+    # resolved_log_choice = st.selectbox("Resolved ticket log", ["resolved_tickets.log", "agent_loop_audit.log", "shadow_predictions.log"], key="resolved_log_choice")
+    # resolved_lines_limit = st.slider("Lines", min_value=20, max_value=500, value=100, step=20, key="resolved_lines_limit")
+    # if st.button("Refresh Resolved Tickets", key="refresh_resolved_tickets"):
+    #     lines = _read_last_log_lines(repo_root, resolved_log_choice, resolved_lines_limit)
+    #     if not lines:
+    #         st.info("No resolved ticket records found yet.")
+    #     else:
+    #         st.code("".join(lines), language="json")
+    #
+    # st.divider()
     st.subheader("Manually Add Resolved Ticket to KB")
     with st.form("manual_resolved_ticket"):
         manual_ticket_id = st.text_input("Ticket ID", value=f"manual-{int(datetime.now().timestamp())}")
@@ -394,12 +555,94 @@ with tabs[3]:
             st.error(f"Resolved ticket ingest failed: {exc}")
 
 with tabs[4]:
-    st.subheader("Audit Logs")
-    log_choice = st.selectbox("Log File", ["agent_loop_audit.log", "shadow_predictions.log", "resolved_tickets.log"], key="audit_log_choice")
-    lines_limit = st.slider("Lines", min_value=20, max_value=500, value=100, step=20, key="audit_lines_limit")
-    if st.button("Refresh Logs", key="refresh_audit_logs"):
-        lines = _read_last_log_lines(repo_root, log_choice, lines_limit)
-        if not lines:
-            st.info("No log lines found yet.")
+    st.subheader("Log Explorer")
+    st.caption("Search and filter across all three log files instead of scrolling raw dumps.")
+
+    col_log, col_scan = st.columns([2, 1])
+    with col_log:
+        explorer_log_choice = st.selectbox(
+            "Log source", ["All logs (merged)"] + ALL_LOG_FILES, key="explorer_log_choice"
+        )
+    with col_scan:
+        scan_depth = st.number_input(
+            "Lines to scan per file (most recent)", min_value=100, max_value=20000, value=2000, step=100,
+            key="explorer_scan_depth",
+        )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        explorer_ticket_id = st.text_input("Ticket ID contains", key="explorer_ticket_id")
+    with col2:
+        explorer_search = st.text_input("Free-text search (any field)", key="explorer_search")
+    with col3:
+        explorer_classifier = st.multiselect(
+            "Classifier mode",
+            ["llm", "heuristic_no_api_key", "heuristic_llm_call_failed", "heuristic_mock_mode", "unknown"],
+            key="explorer_classifier_filter",
+        )
+
+    col4, col5, col6 = st.columns(3)
+    with col4:
+        explorer_actions = st.multiselect(
+            "Action (agent_loop_audit.log only)",
+            ["auto_route", "auto_resolve", "auto_route_spotcheck", "force_security_route", "human_review"],
+            key="explorer_actions_filter",
+        )
+    with col5:
+        use_date_filter = st.checkbox("Filter by date range", key="explorer_use_date")
+    with col6:
+        sort_order = st.selectbox("Sort", ["Newest first", "Oldest first"], key="explorer_sort_order")
+
+    start_dt = end_dt = None
+    if use_date_filter:
+        col_from, col_to = st.columns(2)
+        with col_from:
+            from_date = st.date_input(
+                "From", value=(datetime.now(timezone.utc) - timedelta(days=7)).date(), key="explorer_from_date"
+            )
+        with col_to:
+            to_date = st.date_input("To", value=datetime.now(timezone.utc).date(), key="explorer_to_date")
+        start_dt = datetime.combine(from_date, datetime.min.time(), tzinfo=timezone.utc)
+        end_dt = datetime.combine(to_date, datetime.max.time(), tzinfo=timezone.utc)
+
+    if st.button("🔍 Search Logs", key="explorer_search_btn"):
+        if explorer_log_choice == "All logs (merged)":
+            all_entries: List[Dict[str, Any]] = []
+            for fname in ALL_LOG_FILES:
+                all_entries.extend(_load_log_entries(repo_root, fname, int(scan_depth)))
         else:
-            st.code("".join(lines), language="json")
+            all_entries = _load_log_entries(repo_root, explorer_log_choice, int(scan_depth))
+
+        filtered = _filter_log_entries(
+            all_entries,
+            search_text=explorer_search,
+            classifier_modes=explorer_classifier,
+            actions=explorer_actions,
+            ticket_id=explorer_ticket_id,
+            start_dt=start_dt,
+            end_dt=end_dt,
+        )
+        filtered.sort(key=lambda e: e.get("timestamp", ""), reverse=(sort_order == "Newest first"))
+        st.session_state["explorer_results"] = filtered
+        st.session_state["explorer_scanned_count"] = len(all_entries)
+
+    filtered = st.session_state.get("explorer_results")
+    if filtered is not None:
+        scanned = st.session_state.get("explorer_scanned_count", 0)
+        st.caption(f"{len(filtered)} of {scanned} scanned entries match the current filters.")
+        if not filtered:
+            st.info("No matching log entries. Try widening the filters or increasing the scan depth.")
+        else:
+            table_rows = [
+                {
+                    "timestamp": e.get("timestamp", ""),
+                    "ticket_id": e.get("ticket_id_source", ""),
+                    "action / category": e.get("action") or e.get("category") or "",
+                    "classifier_mode": e.get("classifier_mode_used", ""),
+                    "log_file": e.get("_source_log", ""),
+                }
+                for e in filtered
+            ]
+            st.dataframe(table_rows, use_container_width=True, hide_index=True)
+            with st.expander(f"Raw matching entries ({len(filtered)})"):
+                st.code(json.dumps(filtered, indent=2), language="json")
