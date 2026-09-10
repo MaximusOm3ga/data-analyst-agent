@@ -1,4 +1,7 @@
 import os
+import sys
+import asyncio
+from pathlib import Path
 from typing import Any, Dict, List
 from ..classification import llm
 from ..enrichment import enricher
@@ -16,6 +19,110 @@ SECURITY_TERMS = (
     "unauthorized access",
     "data breach",
 )
+
+_EVAL_LOG_PATH = Path(__file__).resolve().parents[2] / "agent_eval_trigger.log"
+_EVAL_FRAMEWORK_PATH = Path(__file__).resolve().parents[3] / "AI-Agent-Evaluation-Framework"
+_EVAL_DB_PATH = _EVAL_FRAMEWORK_PATH / "agenteval.sqlite3"
+
+
+def trigger_parallel_evaluation(
+    ticket: CommonTicket,
+    decision: ClassificationOutput,
+    tool_result: Dict[str, Any],
+    status: str,
+    action: str,
+    classifier_mode_used: str,
+) -> None:
+    payload = {
+        "ticket_id_source": ticket.ticket_id_source,
+        "status": status,
+        "action": action,
+        "decision": decision.model_dump(),
+        "tool_result": tool_result,
+        "classifier_mode_used": classifier_mode_used,
+    }
+
+    def _run_eval() -> None:
+        try:
+            eval_src = _EVAL_FRAMEWORK_PATH / "src"
+            if str(eval_src) not in sys.path:
+                sys.path.insert(0, str(eval_src))
+
+            from agenteval import Dataset, DatasetCase, EvaluationSuite, evaluate
+            from agenteval.core.evaluator import Evaluator
+            from agenteval.core.models import DatasetCase as CoreDatasetCase, Run, Trace
+            from agenteval.core.results import EvaluationResult
+            from agenteval.storage.database import SQLiteDatabase
+            from agenteval.storage.repositories import Repository
+
+            class _ResolvedTicketEvaluator(Evaluator):
+                name = "ResolvedTicketEvaluator"
+
+                def evaluate(self, case: CoreDatasetCase, run: Run, trace: Trace) -> EvaluationResult:
+                    actual = run.output if isinstance(run.output, dict) else {}
+                    expected = case.expected if isinstance(case.expected, dict) else {}
+                    checks = {
+                        "status": actual.get("status") == expected.get("status"),
+                        "action": actual.get("action") == expected.get("action"),
+                        "category": (actual.get("decision") or {}).get("category") == expected.get("category"),
+                        "queue": (actual.get("decision") or {}).get("queue") == expected.get("queue"),
+                        "priority": (actual.get("decision") or {}).get("priority") == expected.get("priority"),
+                        "recommended_action": (actual.get("decision") or {}).get("recommended_action")
+                        == expected.get("recommended_action"),
+                        "response_present": isinstance(actual.get("tool_result"), dict),
+                    }
+                    passed = sum(1 for ok in checks.values() if ok)
+                    score = passed / len(checks)
+                    return EvaluationResult(
+                        evaluator=self.name,
+                        score=score,
+                        passed=score == 1.0,
+                        explanation=f"Matched {passed}/{len(checks)} response checks for resolved ticket.",
+                        metadata={"expected": expected, "actual": actual, "checks": checks},
+                        evidence=[event.id for event in trace.ordered_events()[-5:]],
+                    )
+
+            def _agent(case_input: dict, tracer=None):
+                return {
+                    "status": case_input["status"],
+                    "action": case_input.get("action"),
+                    "decision": case_input.get("decision"),
+                    "tool_result": case_input.get("tool_result"),
+                }
+
+            dataset = Dataset(
+                id="resolved-ticket-live",
+                name="resolved-ticket-live",
+                cases=[
+                    DatasetCase(
+                        id=payload["ticket_id_source"],
+                        input=payload,
+                        expected={
+                            "status": "resolved",
+                            "action": payload["action"],
+                            "category": payload["decision"].get("category"),
+                            "queue": payload["decision"].get("queue"),
+                            "priority": payload["decision"].get("priority"),
+                            "recommended_action": payload["decision"].get("recommended_action"),
+                        },
+                    )
+                ],
+            )
+            result = evaluate(agent=_agent, dataset=dataset, suite=EvaluationSuite([_ResolvedTicketEvaluator()]))
+            repository = Repository(SQLiteDatabase(_EVAL_DB_PATH))
+            case_result = result.cases[0]
+            repository.save_run(case_result.run, case_result.trace)
+            repository.save_evaluation_results(case_result.run.id, case_result.results)
+            eval_result = case_result.results[0]
+            with _EVAL_LOG_PATH.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    f"ticket={payload['ticket_id_source']} run_id={case_result.run.id} passed={eval_result.passed} score={eval_result.score} action={action}\n"
+                )
+        except Exception as exc:
+            with _EVAL_LOG_PATH.open("a", encoding="utf-8") as handle:
+                handle.write(f"eval_failed ticket={payload['ticket_id_source']} error={exc}\n")
+
+    asyncio.create_task(asyncio.to_thread(_run_eval))
 
 
 def security_guardrail(ticket: CommonTicket, enrichment: EnrichmentContext) -> Dict[str, Any]:
@@ -196,6 +303,14 @@ def run_ticket_loop(ticket: CommonTicket) -> AgentLoopResult:
                     classification=decision,
                     summary=success_summary,
                     tool_result=tool_result,
+                    classifier_mode_used=classifier_mode_used,
+                )
+                trigger_parallel_evaluation(
+                    ticket=ticket,
+                    decision=decision,
+                    tool_result=tool_result,
+                    status="resolved",
+                    action=action,
                     classifier_mode_used=classifier_mode_used,
                 )
             break

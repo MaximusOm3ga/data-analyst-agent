@@ -1,13 +1,66 @@
 import json
+import os
+import threading
 from pathlib import Path
 from typing import Any, Dict
 
+import httpx
+
 from ..audit.service import record_audit_event, record_resolved_ticket
-from ..schemas import CommonTicket, ClassificationOutput, EnrichmentContext
+from ..schemas import ClassificationOutput, CommonTicket, EnrichmentContext
 
 LOG_FILE = Path(__file__).parents[3] / "shadow_predictions.log"
 LOOP_LOG_FILE = Path(__file__).parents[3] / "agent_loop_audit.log"
 RESOLVED_TICKETS_LOG_FILE = Path(__file__).parents[3] / "resolved_tickets.log"
+MIRROR_INBOX_FILE = Path(__file__).parents[3] / "mirror_inbox.log"
+MIRROR_WEBHOOK = os.getenv("EVAL_MIRROR_WEBHOOK", "").strip()
+MIRROR_TIMEOUT = float(os.getenv("EVAL_MIRROR_TIMEOUT_SECONDS", "5"))
+
+
+def _agent_ref() -> str:
+    root = Path(r"C:\Users\sauri\PycharmProjects\AI-Agent-Evaluation-Framework\eval_data_analyst_agent.py")
+    return f"{root}:triage_agent"
+
+
+def _evaluate_payload_async(payload: Dict[str, Any]) -> None:
+    evaluator = os.getenv("EVAL_MIRROR_WEBHOOK", "").strip()
+    if evaluator:
+        try:
+            with httpx.Client(timeout=MIRROR_TIMEOUT) as client:
+                client.post(evaluator, json=payload)
+        except Exception:
+            with MIRROR_INBOX_FILE.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(payload) + "\n")
+
+
+def _queue_eval(payload: Dict[str, Any]) -> None:
+    worker = threading.Thread(target=_evaluate_payload_async, args=(payload,), daemon=True)
+    worker.start()
+
+
+def mirror_payload(payload: Dict[str, Any]) -> None:
+    inbox_file = os.getenv("EVAL_MIRROR_FILE", "").strip()
+    if inbox_file:
+        with Path(inbox_file).open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+        _queue_eval(payload)
+        return
+
+    webhook = os.getenv("EVAL_MIRROR_WEBHOOK", "").strip()
+    if webhook:
+        try:
+            timeout = float(os.getenv("EVAL_MIRROR_TIMEOUT_SECONDS", "5"))
+            with httpx.Client(timeout=timeout) as client:
+                client.post(webhook, json=payload)
+        except Exception:
+            with MIRROR_INBOX_FILE.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(payload) + "\n")
+        _queue_eval(payload)
+        return
+
+    with MIRROR_INBOX_FILE.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload) + "\n")
+    _queue_eval(payload)
 
 
 def log_prediction(
@@ -23,10 +76,11 @@ def log_prediction(
         "queue": classification.queue,
         "confidence": classification.confidence,
         "classifier_mode_used": classifier_mode_used,
-        "timestamp": ticket.timestamp_received.isoformat()
+        "timestamp": ticket.timestamp_received.isoformat(),
     }
     with LOG_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
+    mirror_payload({"kind": "prediction", **entry})
 
 
 def log_loop_event(
@@ -52,6 +106,7 @@ def log_loop_event(
     }
     with LOOP_LOG_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
+    mirror_payload({"kind": "loop_event", **entry})
 
     record_audit_event(
         "loop_event",
@@ -83,6 +138,7 @@ def log_resolved_ticket(
     }
     with RESOLVED_TICKETS_LOG_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
+    mirror_payload({"kind": "resolved_ticket", **entry})
 
     record_resolved_ticket(
         {

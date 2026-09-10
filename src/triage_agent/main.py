@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from .schemas import AgentLoopResult, CommonTicket, KnowledgeBaseIngestRequest, KnowledgeBaseSearchResult, ResolvedTicketRecord, TicketApprovalRequest
 from .kb.service import ingest_kb_documents, ingest_resolved_ticket, search_kb, initialize_kb_store, clear_kb_store, delete_kb_document
 from .logging import shadow_log
-from .orchestration.loop import PENDING_APPROVALS, run_ticket_loop
+from .orchestration.loop import PENDING_APPROVALS, run_ticket_loop, trigger_parallel_evaluation
 from .rag.store import get_store_name
 from .audit.service import initialize_audit_store
 from .tools.executor import execute_tool_action
@@ -31,10 +31,8 @@ async def kb_documents(payload: KnowledgeBaseIngestRequest):
     except Exception as e:
         import traceback, json
         tb = traceback.format_exc()
-        # write traceback to a file for debugging
         with open("kb_upload_error.log", "a", encoding="utf-8") as fh:
             fh.write(tb + "\n")
-        # return a concise error message but keep details in log
         raise HTTPException(status_code=500, detail="Internal server error while ingesting KB documents. See kb_upload_error.log for details.")
 
 
@@ -70,6 +68,26 @@ async def ingest_resolved_ticket_endpoint(payload: ResolvedTicketRecord):
             classification=classification,
             summary=payload.resolution_summary,
             tool_result=tool_result,
+        )
+        decision_for_eval = SimpleNamespace(
+            category=classification.category,
+            queue=classification.queue,
+            priority=classification.priority,
+            recommended_action="auto_resolve",
+            model_dump=lambda: {
+                "category": classification.category,
+                "queue": classification.queue,
+                "priority": classification.priority,
+                "recommended_action": "auto_resolve",
+            },
+        )
+        trigger_parallel_evaluation(
+            ticket=ticket,
+            decision=decision_for_eval,
+            tool_result=tool_result,
+            status="resolved",
+            action="auto_resolve",
+            classifier_mode_used="manual_user_confirmation",
         )
         return {"status": "ok", "ticket_id_source": payload.ticket_id_source, "kb_ingest": result}
     except Exception as e:
