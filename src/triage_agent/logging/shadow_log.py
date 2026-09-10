@@ -1,86 +1,27 @@
 import json
 import os
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Dict
-
-import httpx
 
 from ..audit.service import record_audit_event, record_resolved_ticket
 from ..schemas import ClassificationOutput, CommonTicket, EnrichmentContext
 
-LOG_FILE = Path(__file__).parents[3] / "shadow_predictions.log"
-LOOP_LOG_FILE = Path(__file__).parents[3] / "agent_loop_audit.log"
-RESOLVED_TICKETS_LOG_FILE = Path(__file__).parents[3] / "resolved_tickets.log"
-MIRROR_INBOX_FILE = Path(__file__).parents[3] / "mirror_inbox.log"
-MIRROR_WEBHOOK = os.getenv("EVAL_MIRROR_WEBHOOK", "").strip()
-MIRROR_TIMEOUT = float(os.getenv("EVAL_MIRROR_TIMEOUT_SECONDS", "5"))
-
-
-def _agent_ref() -> str:
-    root = Path(r"C:\Users\sauri\PycharmProjects\AI-Agent-Evaluation-Framework\eval_data_analyst_agent.py")
-    return f"{root}:triage_agent"
-
-
-def _evaluate_payload_async(payload: Dict[str, Any]) -> None:
-    evaluator = os.getenv("EVAL_MIRROR_WEBHOOK", "").strip()
-    if evaluator:
-        try:
-            with httpx.Client(timeout=MIRROR_TIMEOUT) as client:
-                client.post(evaluator, json=payload)
-        except Exception:
-            with MIRROR_INBOX_FILE.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(payload) + "\n")
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+LOG_FILE = PROJECT_ROOT / "shadow_predictions.log"
+LOOP_LOG_FILE = PROJECT_ROOT / "agent_loop_audit.log"
+RESOLVED_TICKETS_LOG_FILE = PROJECT_ROOT / "resolved_tickets.log"
+MIRROR_INBOX_FILE = Path(os.getenv("EVAL_MIRROR_FILE", str(PROJECT_ROOT / "mirror_inbox.log"))).expanduser().resolve(strict=False)
 
 
 def _queue_eval(payload: Dict[str, Any]) -> None:
-    if payload.get("kind") != "resolved_ticket":
-        return
-    if os.getenv("EVAL_AUTO_RUN", "true").strip().lower() not in {"1", "true", "yes", "on"}:
-        return
-    worker_script = Path(r"C:\Users\sauri\PycharmProjects\AI-Agent-Evaluation-Framework\eval_mirror_worker.py")
-    if not worker_script.exists():
-        return
-    try:
-        env = os.environ.copy()
-        env.setdefault("EVAL_MIRROR_FILE", str(Path(r"C:\Users\sauri\PycharmProjects\AI-Agent-Evaluation-Framework\mirror_inbox.log")))
-        env.setdefault("AGENTEVAL_DB", str(Path(r"C:\Users\sauri\PycharmProjects\AI-Agent-Evaluation-Framework\agenteval.sqlite3")))
-        subprocess.Popen(
-            [sys.executable, str(worker_script)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            env=env,
-            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
-        )
-    except Exception:
-        pass
+    return
 
 
 def mirror_payload(payload: Dict[str, Any]) -> None:
-    inbox_file = os.getenv("EVAL_MIRROR_FILE", "").strip()
-    if inbox_file:
-        with Path(inbox_file).open("a", encoding="utf-8") as f:
-            f.write(json.dumps(payload) + "\n")
-        _queue_eval(payload)
-        return
-
-    webhook = os.getenv("EVAL_MIRROR_WEBHOOK", "").strip()
-    if webhook:
-        try:
-            timeout = float(os.getenv("EVAL_MIRROR_TIMEOUT_SECONDS", "5"))
-            with httpx.Client(timeout=timeout) as client:
-                client.post(webhook, json=payload)
-        except Exception:
-            with MIRROR_INBOX_FILE.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(payload) + "\n")
-        _queue_eval(payload)
-        return
-
-    with MIRROR_INBOX_FILE.open("a", encoding="utf-8") as f:
+    inbox_path = Path(os.getenv("EVAL_MIRROR_FILE", str(MIRROR_INBOX_FILE))).expanduser().resolve(strict=False)
+    inbox_path.parent.mkdir(parents=True, exist_ok=True)
+    with inbox_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload) + "\n")
-    _queue_eval(payload)
 
 
 def log_prediction(
