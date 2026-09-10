@@ -1,6 +1,7 @@
 import json
 import os
-import threading
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
@@ -34,8 +35,27 @@ def _evaluate_payload_async(payload: Dict[str, Any]) -> None:
 
 
 def _queue_eval(payload: Dict[str, Any]) -> None:
-    worker = threading.Thread(target=_evaluate_payload_async, args=(payload,), daemon=True)
-    worker.start()
+    if payload.get("kind") != "resolved_ticket":
+        return
+    if os.getenv("EVAL_AUTO_RUN", "true").strip().lower() not in {"1", "true", "yes", "on"}:
+        return
+    worker_script = Path(r"C:\Users\sauri\PycharmProjects\AI-Agent-Evaluation-Framework\eval_mirror_worker.py")
+    if not worker_script.exists():
+        return
+    try:
+        env = os.environ.copy()
+        env.setdefault("EVAL_MIRROR_FILE", str(Path(r"C:\Users\sauri\PycharmProjects\AI-Agent-Evaluation-Framework\mirror_inbox.log")))
+        env.setdefault("AGENTEVAL_DB", str(Path(r"C:\Users\sauri\PycharmProjects\AI-Agent-Evaluation-Framework\agenteval.sqlite3")))
+        subprocess.Popen(
+            [sys.executable, str(worker_script)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            env=env,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        )
+    except Exception:
+        pass
 
 
 def mirror_payload(payload: Dict[str, Any]) -> None:
